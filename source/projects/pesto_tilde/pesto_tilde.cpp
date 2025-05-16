@@ -8,6 +8,7 @@
 #include <torch/script.h>
 #include <regex>
 #include <vector>
+#include <string>
 
 using namespace c74::min;
 
@@ -19,46 +20,74 @@ public:
     MIN_AUTHOR		{"Your Name"};
     MIN_RELATED		{"nn~"};
 
-    inlet<>  input	{ this, "(signal) audio input, (bang) run model inference" };
-    outlet<> pitch_output	{ this, "(float) model's pitch prediction" };
-    outlet<> confidence_output	{ this, "(float) model's confidence prediction" };
-    outlet<> volume_output	{ this, "(float) model's volume prediction" };
-
-    // Attribute for model path
-    attribute<symbol> model_path { this, "model", "",
-        description {
-            "Path to the TorchScript model file (.pt or .pth)"
-        },
-        setter { MIN_FUNCTION {
-            symbol model_file_path = args[0];
-            std::string model_file_str = model_file_path;
+    // First argument is required model path
+    argument<symbol> model_path { this, "model_path", "Path to TorchScript model (.pt/.pth)",
+        MIN_ARGUMENT_FUNCTION {
+            std::string model_file_str = arg;
             
-            // Extract input size from model filename
-            std::regex pattern(".*?(\\d+)\\.pt$");
+            // Extract both sample rate and hop size from filename
+            // Format: <date>_sr<samplerate>_h<chunk>.pt
+            // e.g., 250515_sr44k_h512.pt
+            std::regex pattern(".*sr(\\d+)k.*h(\\d+)\\.pt$");
             std::smatch matches;
-            if (std::regex_search(model_file_str, matches, pattern) && matches.size() > 1) {
-                m_input_dimensions = std::stoi(matches[1].str());
-                cout << "Extracted input size from model name: " << m_input_dimensions << endl;
+            if (std::regex_search(model_file_str, matches, pattern) && matches.size() > 2) {
+                // Extract model sample rate (first 2 digits)
+                int model_sr_first_digits = std::stoi(matches[1].str());
+                
+                // Extract chunk size
+                n_chunk_size = std::stoi(matches[2].str());
+                
+                cout << "Extracted from model name - Sample rate: " << model_sr_first_digits << "kHz, Chunk size: " << n_chunk_size << endl;
+                
+                // Check sample rate matches immediately
+                int max_sr_first_digits = static_cast<int>(m_samplerate / 1000);
+                
+                if (model_sr_first_digits != max_sr_first_digits) {
+                    cout << "WARNING: Model sample rate (" << model_sr_first_digits << "kHz) doesn't match Max sample rate (" 
+                         << m_samplerate / 1000.0 << "kHz)" << endl;
+                } else {
+                    cout << "Sample rate verified: Model and Max sample rates match" << endl;
+                }
             } else {
-                cout << "Could not extract input size from model name, using default: " << m_input_dimensions << endl;
+                cout << "Could not extract sample rate and chunk size from model name, using default chunk size: " << n_chunk_size << endl;
             }
             
             m_model_loaded = load_model(model_file_str);
-            return args;
+        }
+    };
+
+    inlet<>  input	{ this, "(signal) audio input, (bang) run model inference" };
+    outlet<> pitch_output	{ this, "(float) model's pitch prediction" };
+    outlet<> confidence_output	{ this, "(float) model's confidence prediction" };
+    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
+
+    // Confidence threshold
+    attribute<number> thresh { this, "thresh", 0.0,
+        description { "Confidence threshold (0.0-1.0). If set, pitch will output -1500 when confidence is below the threshold" },
+        setter { MIN_FUNCTION {
+            number threshold = args[0];
+            
+            // Validate the threshold is in valid range
+            if (threshold < 0.0)
+                m_confidence_threshold = 0.0;
+            else if (threshold > 1.0)
+                m_confidence_threshold = 1.0;
+            else
+                m_confidence_threshold = threshold;
+            
+            return {};
         }}
     };
-    
-    // respond to the bang message to do something
+
     message<> bang { this, "bang", "Run model inference and output results.",
         MIN_FUNCTION {
-            // Request model inference through the safer threading pattern
+            // Force immediate inference with current data
             m_force_inference = true;
             deliverer.delay(0);
             return {};
         }
     };
 
-    // post to max window == but only when the class is loaded the first time
     message<> maxclass_setup { this, "maxclass_setup",
         MIN_FUNCTION {
             cout << "TorchScript model loader/processor loaded" << endl;
@@ -66,7 +95,6 @@ public:
         }
     };
     
-    // Message to reset/clear the buffer
     message<> reset { this, "reset", "Clear the audio buffer",
         MIN_FUNCTION {
             clear_buffer();
@@ -75,31 +103,25 @@ public:
         }
     };
     
-    // DSP setup - called when audio is initialized
     message<> dspsetup { this, "dspsetup",
         MIN_FUNCTION {
-            number samplerate = args[0];
-            int vectorsize = args[1];
-            
-            m_samplerate = samplerate;
-            m_vectorsize = vectorsize;
+            m_samplerate = args[0];
+            m_vectorsize = args[1];
             m_dsp_active = true;
-            
             return {};
         }
     };
     
-    // Called when DSP is being torn down
     message<> dspstate { this, "dspstate",
         MIN_FUNCTION {
             long state = args[0];
             
-            if (state == 0) { // DSP is being turned off
+            if (state == 0) { // DSP off
                 m_dsp_active = false;
                 clear_buffer();
                 feed_zeros_to_model();
             }
-            else if (state == 1) { // DSP is being turned on
+            else if (state == 1) { // DSP on
                 m_dsp_active = true;
             }
             
@@ -107,20 +129,18 @@ public:
         }
     };
     
-    // Timer to move from audio thread to scheduler thread
     timer<> deliverer { this, 
         MIN_FUNCTION {
-            // Move to the low-priority main thread
+            // Move to main thread (non-audio thread)
             deferrer.set();
             return {};
         }
     };
     
-    // Queue to run inference in the main thread (low priority)
     queue<> deferrer { this, 
         MIN_FUNCTION {
-            // Only run inference if we have enough samples or were forced
-            if ((m_current_samples >= m_input_dimensions) || m_force_inference) {
+            // Run inference if we have a full buffer or forced
+            if ((m_current_samples >= n_chunk_size) || m_force_inference) {
                 run_inference();
                 m_force_inference = false;
             }
@@ -128,56 +148,51 @@ public:
         }
     };
 
-    // Process audio vectors
+    // Process incoming audio and collect into buffer
     void operator()(audio_bundle input, audio_bundle output) {
-        // Get input samples
         auto in = input.samples(0);
         
-        // Process each sample in the vector
         for (auto i = 0; i < input.frame_count(); ++i) {
-            // Add the sample to the FIFO
+            // Add sample to the FIFO
             m_audio_fifo.try_enqueue(in[i]);
             
-            // Track number of samples we've collected
-            if (m_current_samples < m_input_dimensions) {
+            if (m_current_samples < n_chunk_size) {
                 m_current_samples++;
                 
-                // If we've collected exactly enough samples, schedule an inference
-                if (m_current_samples >= m_input_dimensions) {
+                // When buffer is full, trigger inference
+                if (m_current_samples >= n_chunk_size) {
                     deliverer.delay(0);
                 }
             }
         }
-        
-        // Note: This is a non-audio generator object, so we don't output any audio
     }
 
-    // Constructor
     pesto() {
         m_model_loaded = false;
-        m_input_dimensions = 512; // Default input dimensions
+        n_chunk_size = 512;  // Default chunk size for the model
         m_current_samples = 0;
         m_force_inference = false;
-        m_samplerate = 44100.0; // Default sample rate
+        m_samplerate = 44100.0;
         m_dsp_active = false;
+        m_confidence_threshold = 0.0;
         
         cout << "LibTorch version: " << TORCH_VERSION << endl;
     }
 
 private:
-    int m_input_dimensions;     // Size of input tensor dimension
-    int m_current_samples;      // Current count of samples in the buffer
+    int n_chunk_size;           // Size of the audio chunks for model inference
+    int m_current_samples;      // Current count of samples collected
     fifo<float> m_audio_fifo {16384}; // Thread-safe FIFO for audio samples
     bool m_force_inference;     // Flag for manual inference triggering
     number m_samplerate;        // Current sample rate
     int m_vectorsize;           // Current vector size
     bool m_dsp_active;          // Flag indicating if DSP is active
+    number m_confidence_threshold; // Confidence threshold for pitch output
     
-    // TorchScript model components
     torch::jit::script::Module m_module;
     bool m_model_loaded;
     
-    // Helper function to clear the audio buffer
+    // Clear the audio buffer and reset the sample counter
     void clear_buffer() {
         m_current_samples = 0;
         while (m_audio_fifo.size_approx() > 0) {
@@ -186,25 +201,20 @@ private:
         }
     }
     
-    // Helper function to feed zeros to the model to clear its internal state
+    // Feed zeros to reset the model's internal state
     void feed_zeros_to_model() {
         if (!m_model_loaded) return;
         
         try {
-            // Create a vector of zeros
-            std::vector<float> zeros(m_input_dimensions, 0.0f);
-            
-            // Create tensor options
+            std::vector<float> zeros(n_chunk_size, 0.0f);
             auto options = torch::TensorOptions().dtype(torch::kFloat32);
             
-            // Feed zeros to the model a few times to clear any internal state
-            for (int i = 0; i < 3; i++) {  // Feed zeros 3 times
-                torch::Tensor zero_tensor = torch::from_blob(zeros.data(), {1, (int)m_input_dimensions}, options).clone();
-                
+            // Feed zeros multiple times to clear any internal state
+            for (int i = 0; i < 8; i++) {
+                torch::Tensor zero_tensor = torch::from_blob(zeros.data(), {1, (int)n_chunk_size}, options).clone();
                 std::vector<torch::jit::IValue> inputs;
                 inputs.push_back(zero_tensor);
-                
-                m_module.forward(inputs);  // Run inference but don't use the output
+                m_module.forward(inputs);
             }
         }
         catch (const c10::Error& e) {
@@ -212,70 +222,67 @@ private:
         }
     }
     
-    // Function to run inference on the current buffer contents
+    // Run inference on the collected audio samples
     void run_inference() {
-        if (!m_model_loaded || m_current_samples < m_input_dimensions) {
+        if (!m_model_loaded || m_current_samples < n_chunk_size) {
             return;
         }
         
         try {
-            // Create a vector to hold the samples from the FIFO
-            std::vector<float> audio_buffer(m_input_dimensions);
+            // Transfer audio from FIFO to a contiguous buffer
+            std::vector<float> audio_buffer(n_chunk_size);
             
-            // Copy samples from the FIFO to the buffer
-            for (int i = 0; i < m_input_dimensions; i++) {
+            for (int i = 0; i < n_chunk_size; i++) {
                 if (!m_audio_fifo.try_dequeue(audio_buffer[i])) {
-                    // Not enough samples in the FIFO
                     return;
                 }
             }
             
-            // Update the current sample count
-            m_current_samples -= m_input_dimensions;
+            m_current_samples -= n_chunk_size;
             
-            // Create a tensor from the audio buffer
+            // Create tensor and run model inference
             auto options = torch::TensorOptions().dtype(torch::kFloat32);
-            torch::Tensor input_tensor = torch::from_blob(audio_buffer.data(), {1, (int)m_input_dimensions}, options).clone();
+            torch::Tensor input_tensor = torch::from_blob(audio_buffer.data(), {1, (int)n_chunk_size}, options).clone();
             
-            // Create inputs for the model
             std::vector<torch::jit::IValue> inputs;
             inputs.push_back(input_tensor);
             
-            // Execute the model
             auto outputs = m_module.forward(inputs);
             auto output_tuple = outputs.toTuple();
             
-            // Extract the pitch, confidence, and volume values
+            // Extract model outputs
             float pitch = output_tuple->elements()[0].toTensor().item<float>();
             float confidence = output_tuple->elements()[1].toTensor().item<float>();
-            float volume = output_tuple->elements()[2].toTensor().item<float>();
+            float amplitude = output_tuple->elements()[2].toTensor().item<float>();
             
-            // Send the values to the outlets (right to left order)
-            volume_output.send(volume);
+            // Apply confidence threshold if set
+            if (m_confidence_threshold > 0.0 && confidence < m_confidence_threshold) {
+                pitch_output.send(-1500.0f);  // Low confidence, output sentinel value
+            } else {
+                pitch_output.send(pitch);     // Normal or high confidence
+            }
+            
             confidence_output.send(confidence);
-            pitch_output.send(pitch);
+            amplitude_output.send(amplitude);
         }
         catch (const c10::Error& e) {
             cout << "Error running model inference: " << e.what() << endl;
         }
     }
     
-    // Function to load a TorchScript model
+    // Load a TorchScript model from file
     bool load_model(const std::string& model_file_str) {
         try {
-            // Check if path is empty
             if (model_file_str.empty()) {
                 cout << "Model path is empty" << endl;
                 return false;
             }
             
             cout << "Loading model from: " << model_file_str << endl;
-            
-            // Load the TorchScript model
             m_module = torch::jit::load(model_file_str);
-            m_module.eval(); // Set to evaluation mode
-            
+            m_module.eval();
             cout << "Model loaded successfully" << endl;
+            
             return true;
         }
         catch (const c10::Error& e) {
