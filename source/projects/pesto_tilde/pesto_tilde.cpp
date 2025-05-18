@@ -9,6 +9,8 @@
 #include <regex>
 #include <vector>
 #include <string>
+#include <filesystem>
+namespace fs = std::filesystem;
 
 using namespace c74::min;
 
@@ -179,6 +181,61 @@ public:
         cout << "LibTorch version: " << TORCH_VERSION << endl;
     }
 
+    // Add this method to get the package models directory
+    std::string get_models_directory() {
+        try {
+            // Get the path to the external
+            path external_path = path("pesto~", path::filetype::external);
+            std::string path_str = external_path;
+            
+            if (external_path) {
+                // Go up two directories from the external to reach the package root
+                fs::path package_path = fs::path(path_str).parent_path().parent_path();
+                // Add models directory
+                fs::path models_path = package_path / "models";
+                
+                // Create models directory if it doesn't exist
+                if (!fs::exists(models_path)) {
+                    fs::create_directories(models_path);
+                }
+                
+                return models_path.string();
+            }
+        } catch (const std::exception& e) {
+            cout << "Error getting models directory: " << e.what() << endl;
+        }
+        return "";
+    }
+
+    // Modify the load_model function to only look in the package's models directory
+    bool load_model(const std::string& model_file_str) {
+        try {
+            if (model_file_str.empty()) {
+                cout << "Model path is empty" << endl;
+                return false;
+            }
+
+            std::string models_dir = get_models_directory();
+            if (models_dir.empty()) {
+                return false;
+            }
+
+            // Always look in the models directory
+            std::string full_path = models_dir + "/" + model_file_str;
+            
+            cout << "Loading model from: " << full_path << endl;
+            m_module = torch::jit::load(full_path);
+            m_module.eval();
+            cout << "Model loaded successfully" << endl;
+            
+            return true;
+        }
+        catch (const c10::Error& e) {
+            cout << "Error loading the model: " << e.what() << endl;
+            return false;
+        }
+    }
+
 private:
     int n_chunk_size;           // Size of the audio chunks for model inference
     int m_current_samples;      // Current count of samples collected
@@ -267,27 +324,6 @@ private:
         }
         catch (const c10::Error& e) {
             cout << "Error running model inference: " << e.what() << endl;
-        }
-    }
-    
-    // Load a TorchScript model from file
-    bool load_model(const std::string& model_file_str) {
-        try {
-            if (model_file_str.empty()) {
-                cout << "Model path is empty" << endl;
-                return false;
-            }
-            
-            cout << "Loading model from: " << model_file_str << endl;
-            m_module = torch::jit::load(model_file_str);
-            m_module.eval();
-            cout << "Model loaded successfully" << endl;
-            
-            return true;
-        }
-        catch (const c10::Error& e) {
-            cout << "Error loading the model: " << e.what() << endl;
-            return false;
         }
     }
 };
