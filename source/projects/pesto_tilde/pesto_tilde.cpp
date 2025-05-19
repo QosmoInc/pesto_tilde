@@ -17,55 +17,60 @@ using namespace c74::min;
 
 class pesto : public object<pesto>, public vector_operator<> {
 public:
-    MIN_DESCRIPTION	{"Load and run inference on TorchScript models."};
+    MIN_DESCRIPTION	{"A Max external wrapper to run inference on PESTO pitch estimation models."};
     MIN_TAGS		{"audio, machine learning, inference"};
-    MIN_AUTHOR		{"Your Name"};
-    MIN_RELATED		{"nn~"};
+    MIN_AUTHOR		{"Tom Baker @ Qosmo, Japan"};
+    MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
 
-    // First argument is required model path
-    argument<symbol> model_path { this, "model_path", "Path to TorchScript model (.pt/.pth)",
+    // Initial chunk size argument that determines target model size at initialization
+    argument<number> init_chunk {this, "init_chunk",
+        description { "Specify the chunk size of the model you would like to Load, and it will find a matching model .pt in pesto/models. Alternatively specify zero to load the fastest available model." },
         MIN_ARGUMENT_FUNCTION {
-            std::string model_file_str = arg;
-            
-            // Extract both sample rate and hop size from filename
-            // Format: <date>_sr<samplerate>_h<chunk>.pt
-            // e.g., 250515_sr44k_h512.pt
-            std::regex pattern(".*sr(\\d+)k.*h(\\d+)\\.pt$");
-            std::smatch matches;
-            if (std::regex_search(model_file_str, matches, pattern) && matches.size() > 2) {
-                // Extract model sample rate (first 2 digits)
-                int model_sr_first_digits = std::stoi(matches[1].str());
-                
-                // Extract chunk size
-                n_chunk_size = std::stoi(matches[2].str());
-                
-                cout << "Extracted from model name - Sample rate: " << model_sr_first_digits << "kHz, Chunk size: " << n_chunk_size << endl;
-                
-                // Check sample rate matches immediately
-                int max_sr_first_digits = static_cast<int>(m_samplerate / 1000);
-                
-                if (model_sr_first_digits != max_sr_first_digits) {
-                    cout << "WARNING: Model sample rate (" << model_sr_first_digits << "kHz) doesn't match Max sample rate (" 
-                         << m_samplerate / 1000.0 << "kHz)" << endl;
-                } else {
-                    cout << "Sample rate verified: Model and Max sample rates match" << endl;
-                }
-            } else {
-                cout << "Could not extract sample rate and chunk size from model name, using default chunk size: " << n_chunk_size << endl;
-            }
-            
-            m_model_loaded = load_model(model_file_str);
+            m_target_chunk = arg;
+            // Initialize model with the specified chunk size
+            initialize_model();
         }
     };
 
-    inlet<>  input	{ this, "(signal) audio input, (bang) run model inference" };
+    // This message is called once the object is fully constructed
+    message<> maxclass_setup { this, "maxclass_setup",
+        MIN_FUNCTION {         
+            cout << "PESTO model - by Alain Riou @ Sony CSL, Paris" << endl;
+            cout << "Max external - by Tom Baker @ Qosmo, Japan" << endl;
+            return {};
+        }
+    };
+
+    // Message to change the model at runtime
+    message<> model { this, "model", "Explicitly load a model by name, as long as it exists in pesto/models eg. 20251502_sr44k_h512.pt, allows for changing model at runtime",
+        MIN_FUNCTION {
+            if (args.size() > 0) {
+                m_model_path = args[0];
+                cout << "Model path changed to: " << m_model_path << endl;
+                initialize_model();
+            }
+            return {};
+        }
+    };
+
+    // Message to change the chunk size at runtime
+    message<> chunk { this, "chunk", "Explicity load a model by target chunk size, as long as it exists in pesto/models eg. 512 or 1024, allows for changing model at runtime",
+        MIN_FUNCTION {
+            m_target_chunk = args[0];
+            m_model_path = symbol(""); // Reset model path to force reloading
+            initialize_model();
+            return {};
+        }
+    };
+
+    inlet<>  input	{ this, "(signal) audio input, (bang) force model inference" };
     outlet<> pitch_output	{ this, "(float) model's pitch prediction" };
     outlet<> confidence_output	{ this, "(float) model's confidence prediction" };
     outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
 
     // Confidence threshold
-    attribute<number> thresh { this, "thresh", 0.0,
-        description { "Confidence threshold (0.0-1.0). If set, pitch will output -1500 when confidence is below the threshold" },
+    attribute<number> conf { this, "conf", 0.0,
+        description { "Automatic confidence threshold (0.0-1.0). If set, pitch will output -1500 when confidence is below the threshold" },
         setter { MIN_FUNCTION {
             number threshold = args[0];
             
@@ -81,23 +86,20 @@ public:
         }}
     };
 
-    message<> bang { this, "bang", "Run model inference and output results.",
+    message<> bang { this, "bang", "Force a model forward pass and clear the audio and model buffer",
         MIN_FUNCTION {
             // Force immediate inference with current data
             m_force_inference = true;
             deliverer.delay(0);
-            return {};
-        }
-    };
 
-    message<> maxclass_setup { this, "maxclass_setup",
-        MIN_FUNCTION {
-            cout << "TorchScript model loader/processor loaded" << endl;
+            // Clear the buffer after inference
+            clear_buffer();
+            feed_zeros_to_model();
             return {};
         }
     };
     
-    message<> reset { this, "reset", "Clear the audio buffer",
+    message<> reset { this, "reset", "Clear the audio buffer and model internal buffer",
         MIN_FUNCTION {
             clear_buffer();
             feed_zeros_to_model();
@@ -110,11 +112,13 @@ public:
             m_samplerate = args[0];
             m_vectorsize = args[1];
             m_dsp_active = true;
+            
             return {};
         }
     };
     
     message<> dspstate { this, "dspstate",
+        description { "Set DSP state (0 = off, 1 = on), a DSP reset also triggers a buffer clearance" },
         MIN_FUNCTION {
             long state = args[0];
             
@@ -130,7 +134,7 @@ public:
             return {};
         }
     };
-    
+
     timer<> deliverer { this, 
         MIN_FUNCTION {
             // Move to main thread (non-audio thread)
@@ -157,28 +161,48 @@ public:
         for (auto i = 0; i < input.frame_count(); ++i) {
             // Add sample to the FIFO
             m_audio_fifo.try_enqueue(in[i]);
+            m_current_samples++;
             
-            if (m_current_samples < n_chunk_size) {
-                m_current_samples++;
-                
-                // When buffer is full, trigger inference
-                if (m_current_samples >= n_chunk_size) {
-                    deliverer.delay(0);
-                }
+            // When buffer has enough samples, trigger inference
+            // This will happen more frequently with smaller chunk sizes
+            if (m_current_samples >= n_chunk_size) {
+                deliverer.delay(0);
+                // Don't reset m_current_samples here - it's reset in run_inference()
             }
         }
     }
 
     pesto() {
         m_model_loaded = false;
+        m_initialized = false;
         n_chunk_size = 512;  // Default chunk size for the model
         m_current_samples = 0;
         m_force_inference = false;
         m_samplerate = 44100.0;
         m_dsp_active = false;
         m_confidence_threshold = 0.0;
-        
-        cout << "LibTorch version: " << TORCH_VERSION << endl;
+        m_model_path = symbol("");
+        m_target_chunk = 0;  // Default to smallest model
+    }
+
+    // Initialize the model based on current settings
+    void initialize_model() {
+        // If a specific model path was provided, load it
+        if (m_model_path != symbol("")) {
+            cout << "Loading specified model: " << m_model_path << endl;
+            std::string model_file_str = m_model_path;
+            m_model_loaded = load_model(model_file_str);
+            
+            // If loading fails, fall back to best matching model
+            if (!m_model_loaded) {
+                cout << "Failed to load specified model, falling back to best match" << endl;
+                load_best_model();
+            }
+        } 
+        // Otherwise, find the best matching model based on chunk size preference
+        else {
+            load_best_model();
+        }
     }
 
     // Add this method to get the package models directory
@@ -222,18 +246,87 @@ public:
 
             // Always look in the models directory
             std::string full_path = models_dir + "/" + model_file_str;
-            
-            cout << "Loading model from: " << full_path << endl;
             m_module = torch::jit::load(full_path);
             m_module.eval();
-            cout << "Model loaded successfully" << endl;
             
+            // Try to extract chunk size from filename if possible
+            try {
+                std::regex pattern(".*h(\\d+)\\.pt$");
+                std::smatch matches;
+                if (std::regex_search(model_file_str, matches, pattern) && matches.size() > 1) {
+                    n_chunk_size = std::stoi(matches[1].str());
+                }
+            } catch (...) {
+                // Keep default chunk size if extraction fails
+            }
+            
+            cout << "Model loaded successfully - Chunk size = " << n_chunk_size << endl;
             return true;
         }
         catch (const c10::Error& e) {
             cout << "Error loading the model: " << e.what() << endl;
             return false;
         }
+    }
+
+    // Find all compatible models in the models directory
+    std::vector<std::pair<std::string, int>> find_compatible_models() {
+        std::vector<std::pair<std::string, int>> compatible_models;
+        std::string models_dir = get_models_directory();
+        
+        if (models_dir.empty()) return compatible_models;
+
+        for (const auto& entry : fs::directory_iterator(models_dir)) {
+            if (entry.path().extension() == ".pt") {
+                std::string filename = entry.path().filename().string();
+                std::regex pattern(".*sr(\\d+)k.*h(\\d+)\\.pt$");
+                std::smatch matches;
+                
+                if (std::regex_search(filename, matches, pattern) && matches.size() > 2) {
+                    int model_sr = std::stoi(matches[1].str());
+                    int chunk_size = std::stoi(matches[2].str());
+                    
+                    // Check if sample rate matches
+                    if (model_sr == static_cast<int>(m_samplerate / 1000)) {
+                        compatible_models.push_back({filename, chunk_size});
+                    }
+                }
+            }
+        }
+        
+        // Sort by chunk size
+        std::sort(compatible_models.begin(), compatible_models.end(),
+                 [](const auto& a, const auto& b) { return a.second < b.second; });
+        
+        return compatible_models;
+    }
+
+    // Load the best matching model
+    void load_best_model() {
+        auto compatible_models = find_compatible_models();
+        
+        if (compatible_models.empty()) {
+            cout << "No compatible models found for sample rate " << m_samplerate / 1000 << "kHz" << endl;
+            return;
+        }
+
+        // Try to find model matching requested chunk size if specified (non-zero)
+        int target_chunk = m_target_chunk;
+        
+        if (target_chunk > 0) {
+            auto it = std::find_if(compatible_models.begin(), compatible_models.end(),
+                                [target_chunk](const auto& model) { return model.second == target_chunk; });
+            
+            if (it != compatible_models.end()) {
+                m_model_loaded = load_model(it->first);
+                return;
+            }
+            
+            cout << "No model found with chunk size " << target_chunk << endl;
+        }
+        
+        // If we reach here, we're falling back to the smallest chunk size
+        m_model_loaded = load_model(compatible_models[0].first);
     }
 
 private:
@@ -245,6 +338,9 @@ private:
     int m_vectorsize;           // Current vector size
     bool m_dsp_active;          // Flag indicating if DSP is active
     number m_confidence_threshold; // Confidence threshold for pitch output
+    symbol m_model_path;        // Path to model specified by argument
+    bool m_initialized;         // Flag indicating if object is fully constructed
+    number m_target_chunk;      // Target chunk size for model initialization
     
     torch::jit::script::Module m_module;
     bool m_model_loaded;
@@ -282,6 +378,7 @@ private:
     // Run inference on the collected audio samples
     void run_inference() {
         if (!m_model_loaded || m_current_samples < n_chunk_size) {
+            cout << "Model not loaded!" << endl;
             return;
         }
         
@@ -324,6 +421,13 @@ private:
         }
         catch (const c10::Error& e) {
             cout << "Error running model inference: " << e.what() << endl;
+            cout << "Error running model inference: " << e.what() << endl;
+        }
+        
+        // Check audio FIFO size and adjust processing frequency if needed
+        if (m_audio_fifo.size_approx() > n_chunk_size*2) {
+            // Buffer is getting ahead, process more frequentlyMIN_EXTERNAL(pesto);
+            deliverer.delay(0);         
         }
     }
 };
