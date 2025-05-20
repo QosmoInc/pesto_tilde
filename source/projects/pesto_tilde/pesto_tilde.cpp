@@ -135,6 +135,54 @@ public:
         }
     };
 
+    message<> test { this, "test", "Run a single inference on the loaded model and report the latency",
+        MIN_FUNCTION {
+            if (!m_model_loaded) {
+                cout << "Cannot run test: No model loaded" << endl;
+                return {};
+            }
+            
+            try {
+                // Create a vector of random samples for testing
+                std::vector<float> test_buffer(n_chunk_size);
+                for (int i = 0; i < n_chunk_size; i++) {
+                    test_buffer[i] = (float)rand() / RAND_MAX * 2.0f - 1.0f; // Random values between -1.0 and 1.0
+                }
+                
+                auto options = torch::TensorOptions().dtype(torch::kFloat32);
+                torch::Tensor input_tensor = torch::from_blob(test_buffer.data(), {1, (int)n_chunk_size}, options).clone();
+                
+                std::vector<torch::jit::IValue> inputs;
+                inputs.push_back(input_tensor);
+                
+                // Measure inference time
+                auto start_time = std::chrono::high_resolution_clock::now();
+                
+                // Run the model inference
+                auto outputs = m_module.forward(inputs);
+                
+                auto end_time = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+                
+                // Extract model outputs
+                auto output_tuple = outputs.toTuple();
+                float pitch = output_tuple->elements()[0].toTensor().item<float>();
+                float confidence = output_tuple->elements()[1].toTensor().item<float>();
+                float amplitude = output_tuple->elements()[2].toTensor().item<float>();
+                
+                // Print results
+                cout << "Test inference results:" << endl;
+                cout << "  Latency: " << duration.count() / 1000.0 << " ms" << endl;
+                cout << "  Chunk size: " << n_chunk_size << " samples" << endl;
+            }
+            catch (const c10::Error& e) {
+                cout << "Error during test inference: " << e.what() << endl;
+            }
+            
+            return {};
+        }
+    };
+
     timer<> deliverer { this, 
         MIN_FUNCTION {
             // Move to main thread (non-audio thread)
@@ -173,6 +221,9 @@ public:
     }
 
     pesto() {
+        // Disable gradient computation for better inference performance
+        static torch::NoGradGuard no_grad;
+        
         m_model_loaded = false;
         m_initialized = false;
         n_chunk_size = 512;  // Default chunk size for the model
