@@ -8,7 +8,7 @@ log.txt
 externals
 extensions
 support
-build/
+build
 build-*/
 tests
 *.o
@@ -16,8 +16,8 @@ tests
 tmp
 .DS_Store
 .vs
+.vscode
 package-info.json
 libtorch/
-models/
-docs/
+*.pt
 HowTo-NewObject.md

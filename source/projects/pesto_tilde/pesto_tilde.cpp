@@ -66,7 +66,7 @@ public:
     inlet<>  input	{ this, "(signal) audio input, (bang) force model inference" };
     outlet<> pitch_output	{ this, "(float) model's pitch prediction in MIDI note number" };
     outlet<> confidence_output	{ this, "(float) model's confidence prediction (0-1)" };
-    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction (0-1)" };
+    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
 
     // Confidence threshold
     attribute<number> conf { this, "conf", 0.0,
