@@ -86,6 +86,23 @@ public:
         }}
     };
 
+    attribute<number> amp { this, "amp", 0.0,
+        description { "Automatic amplitude threshold (0.0-1.0). If set, pitch will output -1500 when amplitude is below the threshold" },
+        setter { MIN_FUNCTION {
+            number threshold = args[0];
+            
+            // Validate the threshold is in valid range
+            if (threshold < 0.0)
+                m_amplitude_threshold = 0.0;
+            else if (threshold > 1.0)
+                m_amplitude_threshold = 1.0;
+            else
+                m_amplitude_threshold = threshold;
+            
+            return {};
+        }}
+    };
+
     message<> bang { this, "bang", "Force a model forward pass and clear the audio and model buffer",
         MIN_FUNCTION {
             // Force immediate inference with current data
@@ -135,7 +152,7 @@ public:
         }
     };
 
-    message<> test { this, "test", "Run a single inference on the loaded model and report the latency",
+    message<> test { this, "test", "Test function that runs a single inference on the loaded model and reports the inference latency",
         MIN_FUNCTION {
             if (!m_model_loaded) {
                 cout << "Cannot run test: No model loaded" << endl;
@@ -171,9 +188,7 @@ public:
                 float amplitude = output_tuple->elements()[2].toTensor().item<float>();
                 
                 // Print results
-                cout << "Test inference results:" << endl;
                 cout << "  Latency: " << duration.count() / 1000.0 << " ms" << endl;
-                cout << "  Chunk size: " << n_chunk_size << " samples" << endl;
             }
             catch (const c10::Error& e) {
                 cout << "Error during test inference: " << e.what() << endl;
@@ -182,6 +197,68 @@ public:
             return {};
         }
     };
+
+    message<> freq { this, "freq", "Test function that runs inference on the model with a chunk of a sine wave of a specified frequency (in Hz). ie. freq 440",
+    MIN_FUNCTION {
+        if (!m_model_loaded) {
+            cout << "Cannot run frequency test: No model loaded" << endl;
+            return {};
+        }
+        
+        if (args.size() < 1) {
+            cout << "Usage: freq [frequency_in_hz]" << endl;
+            return {};
+        }
+        
+        float frequency = args[0];
+        
+        try {
+            // Generate sine wave at specified frequency
+            std::vector<float> sine_buffer(n_chunk_size);
+            float phase = m_saved_phase; // Start from previous phase
+            float phase_increment = 2.0f * M_PI * frequency / m_samplerate;
+            
+            for (int i = 0; i < n_chunk_size; i++) {
+                sine_buffer[i] = sin(phase);
+                phase += phase_increment;
+                if (phase > 2.0f * M_PI) {
+                    phase -= 2.0f * M_PI;
+                }
+            }
+
+            // Save the phase for next call
+            m_saved_phase = phase;
+            
+            // Create tensor and run model inference
+            auto options = torch::TensorOptions().dtype(torch::kFloat32);
+            torch::Tensor input_tensor = torch::from_blob(sine_buffer.data(), {1, (int)n_chunk_size}, options).clone();
+            
+            std::vector<torch::jit::IValue> inputs;
+            inputs.push_back(input_tensor);
+            
+            auto start_time = std::chrono::high_resolution_clock::now();
+            auto outputs = m_module.forward(inputs);
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            
+            // Extract model outputs
+            auto output_tuple = outputs.toTuple();
+            float pitch = output_tuple->elements()[0].toTensor().item<float>();
+            float confidence = output_tuple->elements()[1].toTensor().item<float>();
+            float amplitude = output_tuple->elements()[2].toTensor().item<float>();
+            
+            // Output a single line with the results
+            // Convert MIDI note to Hz using the formula: Hz = 440 * 2^((midi-69)/12)
+            float pitchHz = 440.0f * pow(2.0f, (pitch - 69.0f) / 12.0f);
+            cout << "Freq test: input=" << frequency << "Hz, output=" << pitchHz << "Hz, latency=" << duration.count()/1000.0 << "ms" << endl;
+        }
+        catch (const c10::Error& e) {
+            cout << "Error during frequency test: " << e.what() << endl;
+        }
+        
+        return {};
+    }
+};
 
     timer<> deliverer { this, 
         MIN_FUNCTION {
@@ -232,8 +309,10 @@ public:
         m_samplerate = 44100.0;
         m_dsp_active = false;
         m_confidence_threshold = 0.0;
+        m_amplitude_threshold = 0.0;
         m_model_path = symbol("");
         m_target_chunk = 0;  // Default to smallest model
+        m_saved_phase = 0.0f; // Initialize phase to zero
     }
 
     // Initialize the model based on current settings
@@ -389,9 +468,11 @@ private:
     int m_vectorsize;           // Current vector size
     bool m_dsp_active;          // Flag indicating if DSP is active
     number m_confidence_threshold; // Confidence threshold for pitch output
+    number m_amplitude_threshold;  // Amplitude threshold for pitch output
     symbol m_model_path;        // Path to model specified by argument
     bool m_initialized;         // Flag indicating if object is fully constructed
     number m_target_chunk;      // Target chunk size for model initialization
+    float m_saved_phase = 0.0f; // Keep track of phase between message calls
     
     torch::jit::script::Module m_module;
     bool m_model_loaded;
@@ -460,11 +541,12 @@ private:
             float confidence = output_tuple->elements()[1].toTensor().item<float>();
             float amplitude = output_tuple->elements()[2].toTensor().item<float>();
             
-            // Apply confidence threshold if set
-            if (m_confidence_threshold > 0.0 && confidence < m_confidence_threshold) {
-                pitch_output.send(-1500.0f);  // Low confidence, output sentinel value
+            // Apply confidence and amplitude thresholds
+            if ((m_confidence_threshold > 0.0 && confidence < m_confidence_threshold) ||
+                (m_amplitude_threshold > 0.0 && amplitude < m_amplitude_threshold)) {
+                pitch_output.send(-1500.0f);  // Low confidence/amplitude, output sentinel value
             } else {
-                pitch_output.send(pitch);     // Normal or high confidence
+                pitch_output.send(pitch);     // Normal or high confidence/amplitude
             }
             
             confidence_output.send(confidence);
@@ -472,12 +554,11 @@ private:
         }
         catch (const c10::Error& e) {
             cout << "Error running model inference: " << e.what() << endl;
-            cout << "Error running model inference: " << e.what() << endl;
         }
         
         // Check audio FIFO size and adjust processing frequency if needed
         if (m_audio_fifo.size_approx() > n_chunk_size*2) {
-            // Buffer is getting ahead, process more frequentlyMIN_EXTERNAL(pesto);
+            // Buffer is getting ahead, process more frequently
             deliverer.delay(0);         
         }
     }
