@@ -17,14 +17,14 @@ using namespace c74::min;
 
 class pesto : public object<pesto>, public vector_operator<> {
 public:
-    MIN_DESCRIPTION	{"A Max external wrapper to run inference on PESTO pitch estimation models."};
+    MIN_DESCRIPTION	{"A wrapper to run streaming inference on PESTO pitch estimation models."};
     MIN_TAGS		{"audio, machine learning, inference"};
     MIN_AUTHOR		{"Tom Baker @ Qosmo, Japan"};
     MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
 
     // Initial chunk size argument that determines target model size at initialization
     argument<number> init_chunk {this, "init_chunk",
-        description { "Specify the chunk size of the model you would like to Load, and it will find a matching model .pt in pesto/models. Alternatively specify zero to load the fastest available model." },
+        description { "Model chunk size (in samples). Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model." },
         MIN_ARGUMENT_FUNCTION {
             m_target_chunk = arg;
             // Initialize model with the specified chunk size
@@ -42,7 +42,7 @@ public:
     };
 
     // Message to change the model at runtime
-    message<> model { this, "model", "Explicitly load a model by name, as long as it exists in pesto/models eg. 20251502_sr44k_h512.pt, allows for changing model at runtime",
+    message<> model { this, "model", "Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt'). Can be used to change models at runtime.",
         MIN_FUNCTION {
             if (args.size() > 0) {
                 m_model_path = args[0];
@@ -52,9 +52,9 @@ public:
             return {};
         }
     };
-
+    
     // Message to change the chunk size at runtime
-    message<> chunk { this, "chunk", "Explicity load a model by target chunk size, as long as it exists in pesto/models eg. 512 or 1024, allows for changing model at runtime",
+    message<> chunk { this, "chunk", "Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models.",
         MIN_FUNCTION {
             m_target_chunk = args[0];
             m_model_path = symbol(""); // Reset model path to force reloading
@@ -64,13 +64,13 @@ public:
     };
 
     inlet<>  input	{ this, "(signal) audio input, (bang) force model inference" };
-    outlet<> pitch_output	{ this, "(float) model's pitch prediction" };
-    outlet<> confidence_output	{ this, "(float) model's confidence prediction" };
-    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
+    outlet<> pitch_output	{ this, "(float) model's pitch prediction in MIDI note number" };
+    outlet<> confidence_output	{ this, "(float) model's confidence prediction (0-1)" };
+    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction (0-1)" };
 
     // Confidence threshold
     attribute<number> conf { this, "conf", 0.0,
-        description { "Automatic confidence threshold (0.0-1.0). If set, pitch will output -1500 when confidence is below the threshold" },
+        description { "Confidence threshold (0-1). When set, pitch output will be -1500 if confidence is below threshold" },
         setter { MIN_FUNCTION {
             number threshold = args[0];
             
@@ -87,15 +87,13 @@ public:
     };
 
     attribute<number> amp { this, "amp", 0.0,
-        description { "Automatic amplitude threshold (0.0-1.0). If set, pitch will output -1500 when amplitude is below the threshold" },
+        description { "Amplitude threshold (0+). When set, pitch output will be -1500 if amplitude is below threshold" },
         setter { MIN_FUNCTION {
             number threshold = args[0];
             
             // Validate the threshold is in valid range
             if (threshold < 0.0)
                 m_amplitude_threshold = 0.0;
-            else if (threshold > 1.0)
-                m_amplitude_threshold = 1.0;
             else
                 m_amplitude_threshold = threshold;
             
@@ -103,7 +101,7 @@ public:
         }}
     };
 
-    message<> bang { this, "bang", "Force a model forward pass and clear the audio and model buffer",
+    message<> bang { this, "bang", "Force immediate model inference with current audio data, then clear buffers",
         MIN_FUNCTION {
             // Force immediate inference with current data
             m_force_inference = true;
@@ -116,7 +114,7 @@ public:
         }
     };
     
-    message<> reset { this, "reset", "Clear the audio buffer and model internal buffer",
+    message<> reset { this, "reset", "Reset the object by clearing both audio and model internal buffers",
         MIN_FUNCTION {
             clear_buffer();
             feed_zeros_to_model();
@@ -135,7 +133,6 @@ public:
     };
     
     message<> dspstate { this, "dspstate",
-        description { "Set DSP state (0 = off, 1 = on), a DSP reset also triggers a buffer clearance" },
         MIN_FUNCTION {
             long state = args[0];
             
@@ -152,7 +149,7 @@ public:
         }
     };
 
-    message<> test { this, "test", "Test function that runs a single inference on the loaded model and reports the inference latency",
+    message<> test { this, "test", "Run model inference on random test data and report the inference latency",
         MIN_FUNCTION {
             if (!m_model_loaded) {
                 cout << "Cannot run test: No model loaded" << endl;
@@ -198,7 +195,7 @@ public:
         }
     };
 
-    message<> freq { this, "freq", "Test function that runs inference on the model with a chunk of a sine wave of a specified frequency (in Hz). ie. freq 440",
+    message<> freq { this, "freq", "Test model with a single chunk of sine wave input at specified frequency (Hz). Usage: 'freq 440'",
     MIN_FUNCTION {
         if (!m_model_loaded) {
             cout << "Cannot run frequency test: No model loaded" << endl;
@@ -302,8 +299,7 @@ public:
         static torch::NoGradGuard no_grad;
         
         m_model_loaded = false;
-        m_initialized = false;
-        n_chunk_size = 512;  // Default chunk size for the model
+        n_chunk_size = 512; 
         m_current_samples = 0;
         m_force_inference = false;
         m_samplerate = 44100.0;
@@ -311,8 +307,8 @@ public:
         m_confidence_threshold = 0.0;
         m_amplitude_threshold = 0.0;
         m_model_path = symbol("");
-        m_target_chunk = 0;  // Default to smallest model
-        m_saved_phase = 0.0f; // Initialize phase to zero
+        m_target_chunk = 0; 
+        m_saved_phase = 0.0f; 
     }
 
     // Initialize the model based on current settings
@@ -470,9 +466,8 @@ private:
     number m_confidence_threshold; // Confidence threshold for pitch output
     number m_amplitude_threshold;  // Amplitude threshold for pitch output
     symbol m_model_path;        // Path to model specified by argument
-    bool m_initialized;         // Flag indicating if object is fully constructed
     number m_target_chunk;      // Target chunk size for model initialization
-    float m_saved_phase = 0.0f; // Keep track of phase between message calls
+    float m_saved_phase = 0.0f; // Keep track of phase for frequency tests
     
     torch::jit::script::Module m_module;
     bool m_model_loaded;
