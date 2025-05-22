@@ -17,7 +17,7 @@ tmp
 .DS_Store
 .vs
 .vscode
-package-info.json
 libtorch/
 *.pt
 HowTo-NewObject.md
+package-info.json.in

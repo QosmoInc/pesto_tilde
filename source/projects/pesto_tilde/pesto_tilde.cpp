@@ -18,13 +18,12 @@ using namespace c74::min;
 class pesto : public object<pesto>, public vector_operator<> {
 public:
     MIN_DESCRIPTION	{"A wrapper to run streaming inference on PESTO pitch estimation models."};
-    MIN_TAGS		{"audio, machine learning, inference"};
-    MIN_AUTHOR		{"Tom Baker @ Qosmo, Japan"};
+    MIN_TAGS		{"audio, machine learning, pitch estimation"};
+    MIN_AUTHOR		{"Qosmo"};
     MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
 
     // Initial chunk size argument that determines target model size at initialization
-    argument<number> init_chunk {this, "init_chunk",
-        description { "Model chunk size (in samples). Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model." },
+    argument<number> init_chunk {this, "init_chunk", "Model chunk size (in samples). Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model.", true,
         MIN_ARGUMENT_FUNCTION {
             m_target_chunk = arg;
             // Initialize model with the specified chunk size
@@ -35,14 +34,14 @@ public:
     // This message is called once the object is fully constructed
     message<> maxclass_setup { this, "maxclass_setup",
         MIN_FUNCTION {         
-            cout << "PESTO model - by Alain Riou @ Sony CSL, Paris" << endl;
-            cout << "Max external - by Tom Baker @ Qosmo, Japan" << endl;
+            cout << "PESTO model - by Alain Riou @ Sony CSL Paris" << endl;
+            cout << "Max external - by Tom Baker @ Qosmo" << endl;
             return {};
         }
     };
 
     // Message to change the model at runtime
-    message<> model { this, "model", "Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt'). Can be used to change models at runtime.",
+    message<> model { this, "model", "Load a specific model by filename (e.g., 'model 20251502_sr44k_h512.pt').  Searches for and loads a model matching the specified name from pesto/models. Can be used to change models at runtime.",
         MIN_FUNCTION {
             if (args.size() > 0) {
                 m_model_path = args[0];
@@ -54,7 +53,7 @@ public:
     };
     
     // Message to change the chunk size at runtime
-    message<> chunk { this, "chunk", "Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models.",
+    message<> chunk { this, "chunk", "Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models. Can be used to change models at runtime. ",
         MIN_FUNCTION {
             m_target_chunk = args[0];
             m_model_path = symbol(""); // Reset model path to force reloading
@@ -387,6 +386,8 @@ public:
             }
             
             cout << "Model loaded successfully - Chunk size = " << n_chunk_size << endl;
+            clear_buffer();
+            feed_zeros_to_model();
             return true;
         }
         catch (const c10::Error& e) {
@@ -468,6 +469,7 @@ private:
     symbol m_model_path;        // Path to model specified by argument
     number m_target_chunk;      // Target chunk size for model initialization
     float m_saved_phase = 0.0f; // Keep track of phase for frequency tests
+    bool m_error_reported = false; // Flag for error reporting
     
     torch::jit::script::Module m_module;
     bool m_model_loaded;
@@ -504,11 +506,22 @@ private:
     
     // Run inference on the collected audio samples
     void run_inference() {
-        if (!m_model_loaded || m_current_samples < n_chunk_size) {
-            cout << "Model not loaded!" << endl;
+        if (!m_model_loaded) {
+            if (!m_error_reported) {
+                cerr << "Error: Model not loaded." << endl;
+                cerr << "Specify a chunk_size with 'pesto~ <chunk_size>'" << endl;
+                cerr << "or use 'pesto~ 0' for the smallest available size." << endl;
+                m_error_reported = true;
+            }
             return;
         }
         
+        if (m_current_samples < n_chunk_size) {
+            return;
+        }
+        
+        m_error_reported = false;
+
         try {
             // Transfer audio from FIFO to a contiguous buffer
             std::vector<float> audio_buffer(n_chunk_size);
