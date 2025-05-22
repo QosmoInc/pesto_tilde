@@ -6,8 +6,8 @@
 
 <c74object name='pesto~' category='audio,  machine learning,  pitch estimation'>
 
-	<digest>A wrapper to run streaming inference on PESTO pitch estimation models</digest>
-	<description>A wrapper to run streaming inference on PESTO pitch estimation models. </description>
+	<digest>Streaming neural pitch estimation</digest>
+	<description>Streaming neural pitch estimation. A Max/MSP wrapper for PESTO, a super Low-latency neural network-based pitch detection model for monophonic audio, providing continuous fundamental frequency estimation as midi values as well as both prediction confidence and note amplitude. </description>
 
 
 	<!--METADATA-->
@@ -25,8 +25,8 @@
 	<objarglist>
 
 		<objarg name='init_chunk' optional='0' type='number'>
-			<digest>Model chunk size (in samples)</digest>
-			<description>Model chunk size (in samples). Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model. </description>
+			<digest>Specify model chunk size</digest>
+			<description>Specify model chunk size. Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model. </description>
 		</objarg>
 
 	</objarglist>
@@ -37,38 +37,38 @@
 	<methodlist>
 
 		<method name='freq'>
-			<digest>Test model with a single chunk of sine wave input at specified frequency (Hz)</digest>
-			<description>Test model with a single chunk of sine wave input at specified frequency (Hz). Usage: 'freq 440' </description>
+			<digest>Test with a chunk of sinusoidal audio</digest>
+			<description>Test with a chunk of sinusoidal audio. Test model with a single chunk of sine wave input at specified frequency (Hz) to test accuracy. Usage: 'freq 440' </description>
 		</method>
 
 		<method name='test'>
-			<digest>Run model inference on random test data and report the inference latency </digest>
-			<description>Run model inference on random test data and report the inference latency </description>
+			<digest>Test inference latency</digest>
+			<description>Test inference latency. Run model inference on random test chunk and report the TorchScript model's inference latency </description>
 		</method>
 
 		<method name='dspstate'>
-			<digest></digest>
-			<description></description>
+			<digest>Set the DSP state to either on (1) or off (0)</digest>
+			<description>Set the DSP state to either on (1) or off (0). </description>
 		</method>
 
 		<method name='bang'>
-			<digest>Force immediate model inference with current audio data, then clear buffers </digest>
-			<description>Force immediate model inference with current audio data, then clear buffers </description>
+			<digest>Force inference and clear buffers</digest>
+			<description>Force inference and clear buffers. Force immediate model inference with current audio data, then clear both the Max external's and the PESTO model's internal circular buffer. </description>
 		</method>
 
 		<method name='chunk'>
-			<digest>Load a model based on chunk size (e.g., 'chunk 512')</digest>
-			<description>Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models. Can be used to change models at runtime. </description>
+			<digest>Load a model by chunk size</digest>
+			<description>Load a model by chunk size. Searches for and loads a model matching the specified chunk size (e.g., 'chunk 512') from pesto/models. Can be used to change models at runtime. </description>
 		</method>
 
 		<method name='model'>
-			<digest>Load a specific model by filename (e.g., 'model 20251502_sr44k_h512.pt')</digest>
-			<description>Load a specific model by filename (e.g., 'model 20251502_sr44k_h512.pt').  Searches for and loads a model matching the specified name from pesto/models. Can be used to change models at runtime. </description>
+			<digest>Load a model by filename</digest>
+			<description>Load a model by filename. Searches for and loads a model matching the specified name (e.g., 'model 20251502_sr44k_h512.pt') from pesto/models. Can be used to change models at runtime. </description>
 		</method>
 
 		<method name='reset'>
-			<digest>Reset the object by clearing both audio and model internal buffers </digest>
-			<description>Reset the object by clearing both audio and model internal buffers </description>
+			<digest>Reset the object by clearing buffers</digest>
+			<description>Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer. </description>
 		</method>
 
 	</methodlist>
@@ -80,12 +80,12 @@
 
 		<attribute name='amp' get='1' set='1' type='float64' size='1' >
 			<digest>Amplitude threshold (0+)</digest>
-			<description>Amplitude threshold (0+). When set, pitch output will be -1500 if amplitude is below threshold </description>
+			<description>Amplitude threshold (0+). If not set the model will continuously output pitch, when set, pitch output will be -1500 if amplitude is below threshold </description>
 		</attribute>
 
 		<attribute name='conf' get='1' set='1' type='float64' size='1' >
 			<digest>Confidence threshold (0-1)</digest>
-			<description>Confidence threshold (0-1). When set, pitch output will be -1500 if confidence is below threshold </description>
+			<description>Confidence threshold (0-1). If not set the model will continuously output pitch, when set, pitch output will be -1500 if confidence is below threshold </description>
 		</attribute>
 
 	</attributelist>

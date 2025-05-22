@@ -17,7 +17,7 @@ using namespace c74::min;
 
 class pesto : public object<pesto>, public vector_operator<> {
 public:
-    MIN_DESCRIPTION	{"A wrapper to run streaming inference on PESTO pitch estimation models."};
+    MIN_DESCRIPTION	{"Streaming neural pitch estimation. A Max/MSP wrapper for PESTO, a super Low-latency neural network-based pitch detection model for monophonic audio, providing continuous fundamental frequency estimation as midi values as well as both prediction confidence and note amplitude."};
     MIN_TAGS		{"audio, machine learning, pitch estimation"};
     MIN_AUTHOR		{"Qosmo"};
     MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
