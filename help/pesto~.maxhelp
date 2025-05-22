@@ -10,10 +10,22 @@
 		}
 ,
 		"classnamespace" : "box",
-		"rect" : [ 1545.0, 411.0, 743.0, 627.0 ],
+		"rect" : [ 100.0, 100.0, 743.0, 627.0 ],
 		"gridsize" : [ 15.0, 15.0 ],
 		"integercoordinates" : 1,
 		"boxes" : [ 			{
+				"box" : 				{
+					"id" : "obj-5",
+					"maxclass" : "button",
+					"numinlets" : 1,
+					"numoutlets" : 1,
+					"outlettype" : [ "bang" ],
+					"parameter_enable" : 0,
+					"patching_rect" : [ 319.0, 377.0, 24.0, 24.0 ]
+				}
+
+			}
+, 			{
 				"box" : 				{
 					"id" : "obj-25",
 					"linecount" : 2,
@@ -58,7 +70,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 248.0, 160.0, 132.0, 47.0 ],
+					"patching_rect" : [ 248.0, 160.0, 135.0, 47.0 ],
 					"text" : "The first <init_chunk> argument is required to load a model"
 				}
 
@@ -164,20 +176,8 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 347.0, 373.0, 190.0, 20.0 ],
+					"patching_rect" : [ 352.0, 379.0, 190.0, 20.0 ],
 					"text" : "Clears the models internal buffer"
-				}
-
-			}
-, 			{
-				"box" : 				{
-					"id" : "obj-30",
-					"maxclass" : "message",
-					"numinlets" : 2,
-					"numoutlets" : 1,
-					"outlettype" : [ "" ],
-					"patching_rect" : [ 303.0, 372.0, 35.0, 22.0 ],
-					"text" : "reset"
 				}
 
 			}
@@ -187,7 +187,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 423.0, 340.0, 150.0, 20.0 ],
+					"patching_rect" : [ 438.0, 341.0, 150.0, 20.0 ],
 					"text" : "Load explicit model name"
 				}
 
@@ -210,7 +210,7 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 243.0, 339.0, 174.0, 22.0 ],
+					"patching_rect" : [ 258.0, 340.0, 174.0, 22.0 ],
 					"text" : "model 250521_sr44k_h1024.pt"
 				}
 
@@ -387,13 +387,6 @@
 			}
 , 			{
 				"patchline" : 				{
-					"destination" : [ "obj-1", 0 ],
-					"source" : [ "obj-30", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
 					"destination" : [ "obj-42", 0 ],
 					"source" : [ "obj-37", 0 ]
 				}
@@ -420,8 +413,15 @@
 				}
 
 			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-1", 0 ],
+					"source" : [ "obj-5", 0 ]
+				}
+
+			}
  ],
-		"originid" : "pat-14",
+		"originid" : "pat-11",
 		"dependency_cache" : [ 			{
 				"name" : "pesto~.mxo",
 				"type" : "iLaX"

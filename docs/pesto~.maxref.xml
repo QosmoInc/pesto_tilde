@@ -52,8 +52,8 @@
 		</method>
 
 		<method name='bang'>
-			<digest>Force inference and clear buffers</digest>
-			<description>Force inference and clear buffers. Force immediate model inference with current audio data, then clear both the Max external's and the PESTO model's internal circular buffer. </description>
+			<digest>Reset the object by clearing buffers</digest>
+			<description>Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer. </description>
 		</method>
 
 		<method name='chunk'>
@@ -64,11 +64,6 @@
 		<method name='model'>
 			<digest>Load a model by filename</digest>
 			<description>Load a model by filename. Searches for and loads a model matching the specified name (e.g., 'model 20251502_sr44k_h512.pt') from pesto/models. Can be used to change models at runtime. </description>
-		</method>
-
-		<method name='reset'>
-			<digest>Reset the object by clearing buffers</digest>
-			<description>Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer. </description>
 		</method>
 
 	</methodlist>

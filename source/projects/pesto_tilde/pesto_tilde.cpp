@@ -100,20 +100,7 @@ public:
         }}
     };
 
-    message<> bang { this, "bang", "Force inference and clear buffers. Force immediate model inference with current audio data, then clear both the Max external's and the PESTO model's internal circular buffer.",
-        MIN_FUNCTION {
-            // Force immediate inference with current data
-            m_force_inference = true;
-            deliverer.delay(0);
-
-            // Clear the buffer after inference
-            clear_buffer();
-            feed_zeros_to_model();
-            return {};
-        }
-    };
-    
-    message<> reset { this, "reset", "Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer.",
+    message<> bang { this, "bang", "Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer.",
         MIN_FUNCTION {
             clear_buffer();
             feed_zeros_to_model();
@@ -288,7 +275,7 @@ public:
             // This will happen more frequently with smaller chunk sizes
             if (m_current_samples >= n_chunk_size) {
                 deliverer.delay(0);
-                // Don't reset m_current_samples here - it's reset in run_inference()
+                // Don't reset m_current_samples here - it's reset in run_inference
             }
         }
     }
@@ -508,7 +495,7 @@ private:
     void run_inference() {
         if (!m_model_loaded) {
             if (!m_error_reported) {
-                cerr << "Error: Model not loaded." << endl;
+                cerr << "An instance of 'pesto~' does not have a model loaded." << endl;
                 cerr << "Specify a chunk_size with 'pesto~ <chunk_size>'" << endl;
                 cerr << "or use 'pesto~ 0' for the smallest available size." << endl;
                 m_error_reported = true;
