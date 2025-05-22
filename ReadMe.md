@@ -13,7 +13,7 @@ To use `pesto~` with a pre-built release, first download the latest release from
 *   macOS: `~/Documents/Max 8/Packages/`
 *   Windows: `C:\Users\[YourUsername]\Documents\Max 8\Packages\`
 
-The release comes pre-bundled with a couple of models, 128 samples and 1024 samples at 44.1kHz sample rate (the default for Max and Ableton). The models are senstive to sample rate, and to avoid any extra overhead, I did not include any sample rate conversion. If you are using a different sample rate, or would just like a different chunk size, you can easily export more scripted models from the original PESTO repository. See the Exporting Models section below for more details. 
+The release comes pre-bundled with a handful of models, 128, 256, 512, and 1024 samples at 44.1kHz sample rate (the default for Max and Ableton). The preprocessing step within the PESTO model is senstive to sample rate, and to avoid any extra overhead I chose not to include any sample rate conversion. If you are using a different sample rate, or would just like a different chunk size, you can very easily export more scripted models from the original PESTO repository. See the Exporting Models section below for more details. 
 
 ## Usage
 
@@ -34,7 +34,7 @@ All functionallity is available in the reference, and an example help patch is i
 
 ### Apple Silicon Macs: Unquarantine (If Needed)
 
-If you encounter issues with Max not loading the external on an Apple Silicon Mac due to security restrictions, you may need to unquarantine the `.mxo` file. Open Terminal and run:
+If you encounter issues with Max not loading the external on an Apple Silicon Mac due to security restrictions, you may need to unquarantine the `.mxo` file. This can be done within the pop-up, alternatively you can open Terminal and run:
 
 ```bash
 xattr -r -d com.apple.quarantine externals/pesto~.mxo/Contents/MacOS/*  
