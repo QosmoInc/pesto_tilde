@@ -10,7 +10,7 @@
 		}
 ,
 		"classnamespace" : "box",
-		"rect" : [ 501.0, 354.0, 743.0, 600.0 ],
+		"rect" : [ 1545.0, 411.0, 743.0, 627.0 ],
 		"gridsize" : [ 15.0, 15.0 ],
 		"integercoordinates" : 1,
 		"boxes" : [ 			{
@@ -20,8 +20,9 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 72.0, 225.0, 55.0, 33.0 ],
-					"text" : "0\n<chunk>"
+					"patching_rect" : [ 82.0, 226.0, 55.0, 33.0 ],
+					"text" : "0\n<chunk>",
+					"textcolor" : [ 1.0, 1.0, 1.0, 1.0 ]
 				}
 
 			}
@@ -32,7 +33,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 133.0, 225.0, 241.0, 33.0 ],
+					"patching_rect" : [ 156.0, 226.0, 241.0, 33.0 ],
 					"text" : "- Loads the fastest model available\n- Loads the model with the specified size"
 				}
 
@@ -44,7 +45,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 31.0, 225.0, 45.0, 33.0 ],
+					"patching_rect" : [ 41.0, 226.0, 48.0, 33.0 ],
 					"text" : "pesto~ \npesto~ ",
 					"textcolor" : [ 0.943276882171631, 0.717904448509216, 0.375425636768341, 1.0 ]
 				}
@@ -53,11 +54,12 @@
 , 			{
 				"box" : 				{
 					"id" : "obj-6",
+					"linecount" : 3,
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 291.0, 411.0, 254.0, 20.0 ],
-					"text" : "The first argument is required to load a model"
+					"patching_rect" : [ 248.0, 160.0, 132.0, 47.0 ],
+					"text" : "The first <init_chunk> argument is required to load a model"
 				}
 
 			}
@@ -80,7 +82,7 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "signal" ],
-					"patching_rect" : [ 150.0, 366.0, 52.0, 22.0 ],
+					"patching_rect" : [ 166.0, 388.0, 52.0, 22.0 ],
 					"text" : "phasor~"
 				}
 
@@ -92,7 +94,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 150.0, 342.0, 32.0, 22.0 ],
+					"patching_rect" : [ 166.0, 364.0, 32.0, 22.0 ],
 					"text" : "mtof"
 				}
 
@@ -106,7 +108,7 @@
 					"numoutlets" : 2,
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 150.0, 318.0, 50.0, 22.0 ]
+					"patching_rect" : [ 166.0, 340.0, 50.0, 22.0 ]
 				}
 
 			}
@@ -116,7 +118,7 @@
 					"maxclass" : "ezdac~",
 					"numinlets" : 2,
 					"numoutlets" : 0,
-					"patching_rect" : [ 150.0, 506.0, 45.0, 45.0 ]
+					"patching_rect" : [ 166.0, 528.0, 45.0, 45.0 ]
 				}
 
 			}
@@ -127,7 +129,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 123.0, 282.0, 77.0, 22.0 ],
+					"patching_rect" : [ 139.0, 304.0, 77.0, 22.0 ],
 					"text" : "loadmess 70"
 				}
 
@@ -139,7 +141,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 31.0, 147.0, 222.0, 60.0 ],
+					"patching_rect" : [ 31.0, 147.0, 179.0, 60.0 ],
 					"text" : "The model has 3 outputs, \n - Pitch value in MIDI\n - Prediction confidence (0-1)\n - Amplitude of the input signal"
 				}
 
@@ -162,7 +164,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 331.0, 351.0, 190.0, 20.0 ],
+					"patching_rect" : [ 347.0, 373.0, 190.0, 20.0 ],
 					"text" : "Clears the models internal buffer"
 				}
 
@@ -174,7 +176,7 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 287.0, 350.0, 35.0, 22.0 ],
+					"patching_rect" : [ 303.0, 372.0, 35.0, 22.0 ],
 					"text" : "reset"
 				}
 
@@ -185,7 +187,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 407.0, 318.0, 150.0, 20.0 ],
+					"patching_rect" : [ 423.0, 340.0, 150.0, 20.0 ],
 					"text" : "Load explicit model name"
 				}
 
@@ -196,7 +198,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 303.0, 283.0, 150.0, 20.0 ],
+					"patching_rect" : [ 319.0, 305.0, 150.0, 20.0 ],
 					"text" : "Change chunk value"
 				}
 
@@ -208,7 +210,7 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 227.0, 317.0, 174.0, 22.0 ],
+					"patching_rect" : [ 243.0, 339.0, 174.0, 22.0 ],
 					"text" : "model 250521_sr44k_h1024.pt"
 				}
 
@@ -220,7 +222,7 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 227.0, 282.0, 71.0, 22.0 ],
+					"patching_rect" : [ 243.0, 304.0, 71.0, 22.0 ],
 					"text" : "chunk 1024"
 				}
 
@@ -231,7 +233,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 355.0, 530.0, 150.0, 20.0 ],
+					"patching_rect" : [ 371.0, 552.0, 150.0, 20.0 ],
 					"text" : "Note Amplitude"
 				}
 
@@ -242,7 +244,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 355.0, 497.0, 150.0, 20.0 ],
+					"patching_rect" : [ 371.0, 519.0, 150.0, 20.0 ],
 					"text" : "Prediction Confidence"
 				}
 
@@ -253,7 +255,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 355.0, 464.0, 150.0, 20.0 ],
+					"patching_rect" : [ 371.0, 486.0, 150.0, 20.0 ],
 					"text" : "Pitch Value in Midi"
 				}
 
@@ -267,7 +269,7 @@
 					"numoutlets" : 2,
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 295.0, 529.0, 50.0, 22.0 ]
+					"patching_rect" : [ 311.0, 551.0, 50.0, 22.0 ]
 				}
 
 			}
@@ -280,7 +282,7 @@
 					"numoutlets" : 2,
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 295.0, 496.0, 50.0, 22.0 ]
+					"patching_rect" : [ 311.0, 518.0, 50.0, 22.0 ]
 				}
 
 			}
@@ -293,7 +295,7 @@
 					"numoutlets" : 2,
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 295.0, 463.0, 50.0, 22.0 ]
+					"patching_rect" : [ 311.0, 485.0, 50.0, 22.0 ]
 				}
 
 			}
@@ -329,8 +331,18 @@
 					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "", "", "" ],
-					"patching_rect" : [ 150.0, 410.0, 133.0, 22.0 ],
+					"patching_rect" : [ 166.0, 432.0, 133.0, 22.0 ],
 					"text" : "pesto~ 128 @conf 0.98"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-3",
+					"maxclass" : "panel",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 34.0, 221.0, 109.0, 44.0 ]
 				}
 
 			}
@@ -338,7 +350,7 @@
 		"lines" : [ 			{
 				"patchline" : 				{
 					"destination" : [ "obj-11", 0 ],
-					"midpoints" : [ 216.5, 490.0, 304.5, 490.0 ],
+					"midpoints" : [ 232.5, 512.0, 320.5, 512.0 ],
 					"source" : [ "obj-1", 1 ]
 				}
 
@@ -346,7 +358,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-13", 0 ],
-					"midpoints" : [ 273.5, 523.0, 304.5, 523.0 ],
+					"midpoints" : [ 289.5, 545.0, 320.5, 545.0 ],
 					"source" : [ "obj-1", 2 ]
 				}
 
@@ -354,7 +366,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-9", 0 ],
-					"midpoints" : [ 159.5, 455.22265625, 304.5, 455.22265625 ],
+					"midpoints" : [ 175.5, 477.22265625, 320.5, 477.22265625 ],
 					"source" : [ "obj-1", 0 ]
 				}
 
@@ -409,7 +421,7 @@
 
 			}
  ],
-		"originid" : "pat-13",
+		"originid" : "pat-14",
 		"dependency_cache" : [ 			{
 				"name" : "pesto~.mxo",
 				"type" : "iLaX"

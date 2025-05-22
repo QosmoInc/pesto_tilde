@@ -23,7 +23,7 @@ public:
     MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
 
     // Initial chunk size argument that determines target model size at initialization
-    argument<number> init_chunk {this, "init_chunk", "Model chunk size (in samples). Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model.", true,
+    argument<number> init_chunk {this, "init_chunk", "Specify model chunk size. Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model.", true,
         MIN_ARGUMENT_FUNCTION {
             m_target_chunk = arg;
             // Initialize model with the specified chunk size
@@ -41,7 +41,7 @@ public:
     };
 
     // Message to change the model at runtime
-    message<> model { this, "model", "Load a specific model by filename (e.g., 'model 20251502_sr44k_h512.pt').  Searches for and loads a model matching the specified name from pesto/models. Can be used to change models at runtime.",
+    message<> model { this, "model", "Load a model by filename. Searches for and loads a model matching the specified name (e.g., 'model 20251502_sr44k_h512.pt') from pesto/models. Can be used to change models at runtime.",
         MIN_FUNCTION {
             if (args.size() > 0) {
                 m_model_path = args[0];
@@ -53,7 +53,7 @@ public:
     };
     
     // Message to change the chunk size at runtime
-    message<> chunk { this, "chunk", "Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models. Can be used to change models at runtime. ",
+    message<> chunk { this, "chunk", "Load a model by chunk size. Searches for and loads a model matching the specified chunk size (e.g., 'chunk 512') from pesto/models. Can be used to change models at runtime. ",
         MIN_FUNCTION {
             m_target_chunk = args[0];
             m_model_path = symbol(""); // Reset model path to force reloading
@@ -69,7 +69,7 @@ public:
 
     // Confidence threshold
     attribute<number> conf { this, "conf", 0.0,
-        description { "Confidence threshold (0-1). When set, pitch output will be -1500 if confidence is below threshold" },
+        description { "Confidence threshold (0-1). If not set the model will continuously output pitch, when set, pitch output will be -1500 if confidence is below threshold" },
         setter { MIN_FUNCTION {
             number threshold = args[0];
             
@@ -86,7 +86,7 @@ public:
     };
 
     attribute<number> amp { this, "amp", 0.0,
-        description { "Amplitude threshold (0+). When set, pitch output will be -1500 if amplitude is below threshold" },
+        description { "Amplitude threshold (0+). If not set the model will continuously output pitch, when set, pitch output will be -1500 if amplitude is below threshold" },
         setter { MIN_FUNCTION {
             number threshold = args[0];
             
@@ -100,7 +100,7 @@ public:
         }}
     };
 
-    message<> bang { this, "bang", "Force immediate model inference with current audio data, then clear buffers",
+    message<> bang { this, "bang", "Force inference and clear buffers. Force immediate model inference with current audio data, then clear both the Max external's and the PESTO model's internal circular buffer.",
         MIN_FUNCTION {
             // Force immediate inference with current data
             m_force_inference = true;
@@ -113,7 +113,7 @@ public:
         }
     };
     
-    message<> reset { this, "reset", "Reset the object by clearing both audio and model internal buffers",
+    message<> reset { this, "reset", "Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer.",
         MIN_FUNCTION {
             clear_buffer();
             feed_zeros_to_model();
@@ -131,7 +131,7 @@ public:
         }
     };
     
-    message<> dspstate { this, "dspstate",
+    message<> dspstate { this, "dspstate", "Set the DSP state to either on (1) or off (0).",
         MIN_FUNCTION {
             long state = args[0];
             
@@ -148,7 +148,7 @@ public:
         }
     };
 
-    message<> test { this, "test", "Run model inference on random test data and report the inference latency",
+    message<> test { this, "test", "Test inference latency. Run model inference on random test chunk and report the TorchScript model's inference latency",
         MIN_FUNCTION {
             if (!m_model_loaded) {
                 cout << "Cannot run test: No model loaded" << endl;
@@ -194,7 +194,7 @@ public:
         }
     };
 
-    message<> freq { this, "freq", "Test model with a single chunk of sine wave input at specified frequency (Hz). Usage: 'freq 440'",
+    message<> freq { this, "freq", "Test with a chunk of sinusoidal audio. Test model with a single chunk of sine wave input at specified frequency (Hz) to test accuracy. Usage: 'freq 440'",
     MIN_FUNCTION {
         if (!m_model_loaded) {
             cout << "Cannot run frequency test: No model loaded" << endl;
