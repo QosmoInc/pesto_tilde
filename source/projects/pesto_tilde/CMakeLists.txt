@@ -123,16 +123,32 @@ if (APPLE)
 endif()
 
 if (MSVC)
+  # Define the support directory path relative to the project root
+  set(SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../support")
+  message(STATUS "Support directory set to: ${SUPPORT_DIR}")
+  
+  # Create support directory if it doesn't exist
+  add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+    "${SUPPORT_DIR}"
+    COMMENT "Creating support directory if it doesn't exist"
+  )
+
+  # Copy all torch DLLs to both externals and support directories
   file(GLOB TORCH_DLLS "${TORCH_INSTALL_PREFIX}/lib/*.dll")
   
   foreach(DLL ${TORCH_DLLS})
+    # Copy to support directory
     add_custom_command(
       TARGET ${PROJECT_NAME}
       POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${DLL}"
-      "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/"
-      COMMENT "Copying ${DLL}"
+      "${SUPPORT_DIR}/"
+      COMMENT "Copying ${DLL} to support"
     )
   endforeach()
+
 endif()

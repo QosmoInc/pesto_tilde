@@ -36,9 +36,24 @@
 
 	<methodlist>
 
-		<method name='freq'>
-			<digest>Test model with a single chunk of sine wave input at specified frequency (Hz)</digest>
-			<description>Test model with a single chunk of sine wave input at specified frequency (Hz). Usage: 'freq 440' </description>
+		<method name='chunk'>
+			<digest>Load a model based on chunk size (e.g., 'chunk 512')</digest>
+			<description>Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models. </description>
+		</method>
+
+		<method name='model'>
+			<digest>Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt')</digest>
+			<description>Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt'). Can be used to change models at runtime. </description>
+		</method>
+
+		<method name='bang'>
+			<digest>Force immediate model inference with current audio data, then clear buffers </digest>
+			<description>Force immediate model inference with current audio data, then clear buffers </description>
+		</method>
+
+		<method name='reset'>
+			<digest>Reset the object by clearing both audio and model internal buffers </digest>
+			<description>Reset the object by clearing both audio and model internal buffers </description>
 		</method>
 
 		<method name='test'>
@@ -51,24 +66,9 @@
 			<description></description>
 		</method>
 
-		<method name='bang'>
-			<digest>Force immediate model inference with current audio data, then clear buffers </digest>
-			<description>Force immediate model inference with current audio data, then clear buffers </description>
-		</method>
-
-		<method name='chunk'>
-			<digest>Load a model based on chunk size (e.g., 'chunk 512')</digest>
-			<description>Load a model based on chunk size (e.g., 'chunk 512'). Searches for and loads a model matching the specified chunk size from pesto/models. </description>
-		</method>
-
-		<method name='model'>
-			<digest>Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt')</digest>
-			<description>Load a specific model by filename from pesto/models directory (e.g., 'model 20251502_sr44k_h512.pt'). Can be used to change models at runtime. </description>
-		</method>
-
-		<method name='reset'>
-			<digest>Reset the object by clearing both audio and model internal buffers </digest>
-			<description>Reset the object by clearing both audio and model internal buffers </description>
+		<method name='freq'>
+			<digest>Test model with a single chunk of sine wave input at specified frequency (Hz)</digest>
+			<description>Test model with a single chunk of sine wave input at specified frequency (Hz). Usage: 'freq 440' </description>
 		</method>
 
 	</methodlist>
