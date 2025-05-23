@@ -10,9 +10,70 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include <thread>
+#include <mutex>
+#include <semaphore>
+#include <atomic>
+#include <chrono>
 namespace fs = std::filesystem;
 
 using namespace c74::min;
+
+// Power-of-2 ceiling function for efficient circular buffer sizing
+unsigned power_ceil(unsigned x) {
+    if (x <= 1) return 1;
+    int power = 2;
+    x--;
+    while (x >>= 1) power <<= 1;
+    return power;
+}
+
+// Circular buffer class for efficient audio buffering
+class CircularBuffer {
+private:
+    std::vector<float> buffer;
+    std::atomic<size_t> write_pos{0};
+    std::atomic<size_t> read_pos{0};
+    size_t capacity;
+    size_t mask; // For power-of-2 optimization
+    
+public:
+    CircularBuffer() : capacity(0), mask(0) {}
+    
+    void resize(size_t size) {
+        capacity = power_ceil(size);
+        mask = capacity - 1;
+        buffer.resize(capacity);
+        write_pos = 0;
+        read_pos = 0;
+    }
+    
+    void put(float sample) {
+        size_t pos = write_pos.load(std::memory_order_relaxed) & mask;
+        buffer[pos] = sample;
+        write_pos.store(write_pos.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+    }
+    
+    bool get(float* dest, size_t count) {
+        if (available() < count) return false;
+        
+        size_t pos = read_pos.load(std::memory_order_relaxed) & mask;
+        for (size_t i = 0; i < count; ++i) {
+            dest[i] = buffer[(pos + i) & mask];
+        }
+        read_pos.store(read_pos.load(std::memory_order_relaxed) + count, std::memory_order_release);
+        return true;
+    }
+    
+    size_t available() const {
+        return write_pos.load(std::memory_order_acquire) - read_pos.load(std::memory_order_acquire);
+    }
+    
+    void clear() {
+        write_pos = 0;
+        read_pos = 0;
+    }
+};
 
 
 class pesto : public object<pesto>, public vector_operator<> {
@@ -62,7 +123,7 @@ public:
         }
     };
 
-    inlet<>  input	{ this, "(signal) audio input, (bang) force model inference" };
+    inlet<>  input	{ this, "(signal) audio input, (bang) clear buffers and reset model state" };
     outlet<> pitch_output	{ this, "(float) model's pitch prediction in MIDI note number" };
     outlet<> confidence_output	{ this, "(float) model's confidence prediction (0-1)" };
     outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
@@ -158,8 +219,12 @@ public:
                 // Measure inference time
                 auto start_time = std::chrono::high_resolution_clock::now();
                 
-                // Run the model inference
-                auto outputs = m_module.forward(inputs);
+                // Run the model inference with mutex protection
+                torch::jit::IValue outputs;
+                {
+                    std::lock_guard<std::mutex> lock(m_model_mutex);
+                    outputs = m_module.forward(inputs);
+                }
                 
                 auto end_time = std::chrono::high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
@@ -220,7 +285,14 @@ public:
             inputs.push_back(input_tensor);
             
             auto start_time = std::chrono::high_resolution_clock::now();
-            auto outputs = m_module.forward(inputs);
+            
+            // Run model inference with mutex protection
+            torch::jit::IValue outputs;
+            {
+                std::lock_guard<std::mutex> lock(m_model_mutex);
+                outputs = m_module.forward(inputs);
+            }
+            
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
             
@@ -243,51 +315,47 @@ public:
     }
 };
 
-    timer<> deliverer { this, 
-        MIN_FUNCTION {
-            // Move to main thread (non-audio thread)
-            deferrer.set();
-            return {};
-        }
-    };
-    
-    queue<> deferrer { this, 
-        MIN_FUNCTION {
-            // Run inference if we have a full buffer or forced
-            if ((m_current_samples >= n_chunk_size) || m_force_inference) {
-                run_inference();
-                m_force_inference = false;
-            }
-            return {};
-        }
-    };
-
     // Process incoming audio and collect into buffer
     void operator()(audio_bundle input, audio_bundle output) {
+        if (!m_dsp_active) return;
+        
+        // Count audio frames regardless of model state
+        if (!m_model_loaded) {
+            m_audio_frames_without_model += input.frame_count();
+            // Only show error after processing audio for ~0.5 second (22050 frames at 44.1kHz)
+            if (m_audio_frames_without_model > 22050 && !m_error_reported) {
+                cerr << "An instance of 'pesto~' does not have a model loaded." << endl;
+                cerr << "Specify a chunk_size with 'pesto~ <chunk_size>'" << endl;
+                cerr << "or use 'pesto~ 0' for the smallest available size." << endl;
+                m_error_reported = true;
+            }
+            return; // Don't process audio if no model
+        } else {
+            // Reset counter when model is loaded
+            m_audio_frames_without_model = 0;
+            m_error_reported = false;
+        }
+        
         auto in = input.samples(0);
         
         for (auto i = 0; i < input.frame_count(); ++i) {
-            // Add sample to the FIFO
-            m_audio_fifo.try_enqueue(in[i]);
-            m_current_samples++;
-            
-            // When buffer has enough samples, trigger inference
-            // This will happen more frequently with smaller chunk sizes
-            if (m_current_samples >= n_chunk_size) {
-                deliverer.delay(0);
-                // Don't reset m_current_samples here - it's reset in run_inference
-            }
+            // Add sample to circular buffer
+            m_in_buffer.put(in[i]);
+        }
+        
+        // Check if we have enough samples and inference thread is ready
+        if (m_in_buffer.available() >= n_chunk_size && m_result_ready.try_acquire()) {
+            // Signal inference thread that data is ready
+            m_data_ready.release();
         }
     }
 
-    pesto() {
+    pesto() : m_data_ready(0), m_result_ready(1), m_should_stop(false) {
         // Disable gradient computation for better inference performance
         static torch::NoGradGuard no_grad;
         
         m_model_loaded = false;
         n_chunk_size = 512; 
-        m_current_samples = 0;
-        m_force_inference = false;
         m_samplerate = 44100.0;
         m_dsp_active = false;
         m_confidence_threshold = 0.0;
@@ -295,6 +363,37 @@ public:
         m_model_path = symbol("");
         m_target_chunk = 0; 
         m_saved_phase = 0.0f; 
+        m_error_reported = false;
+        m_audio_frames_without_model = 0;
+        
+        // Initialize buffers
+        int buffer_size = power_ceil(std::max(n_chunk_size, 4096));
+        m_in_buffer.resize(buffer_size);
+        m_model_input_buffer = std::make_unique<float[]>(1024); // Max chunk size
+        
+        // Pre-create tensor options
+        m_tensor_options = torch::TensorOptions().dtype(torch::kFloat32);
+        
+        // Start inference thread
+        m_inference_thread = std::make_unique<std::thread>([this]() {
+            while (!m_should_stop.load()) {
+                if (m_data_ready.try_acquire_for(std::chrono::milliseconds(100))) {
+                    run_inference();
+                    m_result_ready.release();
+                }
+            }
+        });
+    }
+    
+    ~pesto() {
+        // Signal thread to stop
+        m_should_stop = true;
+        m_data_ready.release(); // Wake up thread
+        
+        // Wait for thread to finish
+        if (m_inference_thread && m_inference_thread->joinable()) {
+            m_inference_thread->join();
+        }
     }
 
     // Initialize the model based on current settings
@@ -445,9 +544,6 @@ public:
 
 private:
     int n_chunk_size;           // Size of the audio chunks for model inference
-    int m_current_samples;      // Current count of samples collected
-    fifo<float> m_audio_fifo {16384}; // Thread-safe FIFO for audio samples
-    bool m_force_inference;     // Flag for manual inference triggering
     number m_samplerate;        // Current sample rate
     int m_vectorsize;           // Current vector size
     bool m_dsp_active;          // Flag indicating if DSP is active
@@ -457,17 +553,25 @@ private:
     number m_target_chunk;      // Target chunk size for model initialization
     float m_saved_phase = 0.0f; // Keep track of phase for frequency tests
     bool m_error_reported = false; // Flag for error reporting
+    int m_audio_frames_without_model = 0; // Counter for audio frames processed without model
+    
+    // Threading and buffer components
+    CircularBuffer m_in_buffer; // Circular buffer for audio input
+    std::unique_ptr<float[]> m_model_input_buffer; // Pre-allocated buffer for model input
+    torch::TensorOptions m_tensor_options; // Pre-created tensor options
+    
+    // Threading synchronization
+    std::binary_semaphore m_data_ready, m_result_ready;
+    std::unique_ptr<std::thread> m_inference_thread;
+    std::atomic<bool> m_should_stop;
+    std::mutex m_model_mutex; // Protect model access
     
     torch::jit::script::Module m_module;
     bool m_model_loaded;
     
-    // Clear the audio buffer and reset the sample counter
+    // Clear the audio buffer
     void clear_buffer() {
-        m_current_samples = 0;
-        while (m_audio_fifo.size_approx() > 0) {
-            float temp;
-            m_audio_fifo.try_dequeue(temp);
-        }
+        m_in_buffer.clear();
     }
     
     // Feed zeros to reset the model's internal state
@@ -494,40 +598,34 @@ private:
     // Run inference on the collected audio samples
     void run_inference() {
         if (!m_model_loaded) {
-            if (!m_error_reported) {
-                cerr << "An instance of 'pesto~' does not have a model loaded." << endl;
-                cerr << "Specify a chunk_size with 'pesto~ <chunk_size>'" << endl;
-                cerr << "or use 'pesto~ 0' for the smallest available size." << endl;
-                m_error_reported = true;
-            }
-            return;
+            return; // Silently return if no model loaded
         }
         
-        if (m_current_samples < n_chunk_size) {
+        // Check if we have enough samples
+        if (m_in_buffer.available() < n_chunk_size) {
             return;
         }
         
         m_error_reported = false;
 
         try {
-            // Transfer audio from FIFO to a contiguous buffer
-            std::vector<float> audio_buffer(n_chunk_size);
-            
-            for (int i = 0; i < n_chunk_size; i++) {
-                if (!m_audio_fifo.try_dequeue(audio_buffer[i])) {
-                    return;
-                }
+            // Get samples from circular buffer into pre-allocated buffer
+            if (!m_in_buffer.get(m_model_input_buffer.get(), n_chunk_size)) {
+                return; // Not enough samples available
             }
             
-            m_current_samples -= n_chunk_size;
-            
-            // Create tensor and run model inference
-            auto options = torch::TensorOptions().dtype(torch::kFloat32);
-            torch::Tensor input_tensor = torch::from_blob(audio_buffer.data(), {1, (int)n_chunk_size}, options).clone();
+            // Create tensor using pre-allocated buffer and pre-created options
+            torch::Tensor input_tensor = torch::from_blob(
+                m_model_input_buffer.get(), 
+                {1, (int)n_chunk_size}, 
+                m_tensor_options
+            ).clone();
             
             std::vector<torch::jit::IValue> inputs;
             inputs.push_back(input_tensor);
             
+            // Thread-safe model inference
+            std::lock_guard<std::mutex> lock(m_model_mutex);
             auto outputs = m_module.forward(inputs);
             auto output_tuple = outputs.toTuple();
             
@@ -549,12 +647,6 @@ private:
         }
         catch (const c10::Error& e) {
             cout << "Error running model inference: " << e.what() << endl;
-        }
-        
-        // Check audio FIFO size and adjust processing frequency if needed
-        if (m_audio_fifo.size_approx() > n_chunk_size*2) {
-            // Buffer is getting ahead, process more frequently
-            deliverer.delay(0);         
         }
     }
 };
