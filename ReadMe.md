@@ -1,4 +1,4 @@
-# 🌿 PESTO for Max
+# 🌿 pesto~ for Max/MSP
 
 This repository hosts `pesto~`, a Max/MSP external object designed for streaming pitch estimation using the PESTO model. 
 
@@ -13,16 +13,16 @@ To use `pesto~` with a pre-built release, first download the latest release from
 *   macOS: `~/Documents/Max 8/Packages/`
 *   Windows: `C:\Users\[YourUsername]\Documents\Max 8\Packages\`
 
-The release comes pre-bundled with a handful of models, 128, 256, 512, and 1024 samples at 44.1kHz sample rate (the default for Max and Ableton). The preprocessing step within the PESTO model is senstive to sample rate, and to avoid any extra overhead I chose not to include any sample rate conversion. If you are using a different sample rate, or would just like a different chunk size, you can very easily export more scripted models from the original PESTO repository. See the Exporting Models section below for more details. 
+The release comes pre-bundled with a handful of models, 128, 256, 512, and 1024 samples at 44.1kHz sample rate (the default for Max and Ableton). The preprocessing step within the PESTO model is sensitive to sample rate, and to avoid any extra overhead I chose not to include any sample rate conversion. If you are using a different sample rate, or would just like a different chunk size, you can very easily export more scripted models from the original PESTO repository. See the Exporting Models section below for more details. 
 
 ## Usage
 
 To use `pesto~`, create a new object in Max with the syntax `pesto~ <chunk_size>`. The chunk size determines how many samples are processed at once - smaller chunks reduce latency while larger chunks improve accuracy. We recommend values between 128 samples (minimum stable size) and 1024 samples (acceptable latency for most applications). You must specify a chunk size argument, though using `0` will automatically select the smallest available chunk size.
 
 `pesto~` has three outlets:
-1.   **Pitch:** The first outlet outputs the estimated midi pitch value.
-2.   **Confidence:** The second outlet outputs the confidence of the pitch estimation, ranging from 0 to 1.
-3.   **Amplitude:** The third outlet outputs an continuous note amplitude.
+1.   **Pitch:** Outputs the estimated midi pitch value.
+2.   **Confidence:** Outputs the confidence of the pitch estimation, ranging from 0 to 1.
+3.   **Amplitude:** Outputs an continuous note amplitude.
 
 You can change settings during runtime by sending these messages to the object:
 - `chunk <chunk_size>` to adjust the processing chunk size
@@ -63,6 +63,8 @@ To use `pesto~` with different sample rates or chunk sizes not included in the p
 4.  **Load the Model in Max:**
     In Max, you can load the new model by sending the message `model <modelname.pt>` to the `pesto~` object.
 
+Note. in the `load_model()` function in `export_jit.py` you may need to add the argument `mirror=1.0` to ensure the incoming chunk is centered to ensure minimal latency!
+
 ---
 
 ## Building from Source
@@ -70,7 +72,7 @@ To use `pesto~` with different sample rates or chunk sizes not included in the p
 Building `pesto~` from source involves cloning the repository, downloading dependencies (LibTorch and CMake), and then running the specific CMake commands to your OS.
 
 ### 1. Clone the Repository
-If you haven't already, clone this repository to your local machine. It's recommended to clone it into your Max Packages folder. For Max 8, the typical locations are:
+If you haven't already, clone this repository to your local machine. It's recommended to clone it directly into your Max Packages folder. For Max 8, the typical locations are:
 *   macOS: `~/Documents/Max 8/Packages/`
 *   Windows: `C:\Users\[YourUsername]\Documents\Max 8\Packages\`
 
@@ -122,7 +124,7 @@ This will generate the `pesto~.mxo` (macOS) or `pesto~.mxe64` (Windows) file in 
 
 ## Contributions
 
-Contributions, bug reports, and optimisations are welcome! Especially building for Intel Mac or Linux! Please feel free to open an issue or submit a pull request.
+Contributions, bug reports, and optimisations are welcome! Especially builds for Intel Mac or Linux! Please feel free to open an issue or submit a pull request.
 
 ## Credits
 
