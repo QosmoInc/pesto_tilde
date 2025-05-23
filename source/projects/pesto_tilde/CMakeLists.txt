@@ -53,7 +53,15 @@ add_library(
 
 # Link against torch libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
+
+# Set C++20 standard correctly for all compilers
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
+
+if(MSVC)
+    # Use the correct flag for MSVC to enable C++20
+    target_compile_options(${PROJECT_NAME} PRIVATE "/std:c++latest")
+endif()
 
 # Set rpath for Mac to look in loader path only, not in absolute paths
 if (APPLE)
