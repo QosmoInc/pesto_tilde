@@ -63,7 +63,7 @@ To use `pesto~` with different sample rates or chunk sizes not included in the p
 4.  **Load the Model in Max:**
     In Max, you can load the new model by sending the message `model <modelname.pt>` to the `pesto~` object.
 
-Note. in the `load_model()` function in `export_jit.py` you may need to add the argument `mirror=1.0` to ensure the incoming chunk is centered to ensure minimal latency!
+**Note!** in the `load_model()` function in `export_jit.py`, you may need to add the argument `mirror=1.0`, This centres the incoming chunks in the CQT window to ensure minimal latency!
 
 ---
 
