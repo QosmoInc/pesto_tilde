@@ -186,7 +186,6 @@ public:
             if (state == 0) { // DSP off
                 m_dsp_active = false;
                 clear_buffer();
-                feed_zeros_to_model();
             }
             else if (state == 1) { // DSP on
                 m_dsp_active = true;
@@ -398,6 +397,13 @@ public:
 
     // Initialize the model based on current settings
     void initialize_model() {
+        // Temporarily disable model processing during model change
+        bool was_loaded = m_model_loaded;
+        m_model_loaded = false;
+        
+        // Clear buffers to prevent size mismatches
+        clear_buffer();
+        
         // If a specific model path was provided, load it
         if (m_model_path != symbol("")) {
             cout << "Loading specified model: " << m_model_path << endl;
@@ -413,6 +419,12 @@ public:
         // Otherwise, find the best matching model based on chunk size preference
         else {
             load_best_model();
+        }
+        
+        // Resize buffer if chunk size changed and model loaded successfully
+        if (m_model_loaded) {
+            int buffer_size = power_ceil(std::max(n_chunk_size, 4096));
+            m_in_buffer.resize(buffer_size);
         }
     }
 
@@ -442,7 +454,6 @@ public:
         return "";
     }
 
-    // Modify the load_model function to only look in the package's models directory
     bool load_model(const std::string& model_file_str) {
         try {
             if (model_file_str.empty()) {
@@ -457,23 +468,32 @@ public:
 
             // Always look in the models directory
             std::string full_path = models_dir + "/" + model_file_str;
-            m_module = torch::jit::load(full_path);
-            m_module.eval();
             
-            // Try to extract chunk size from filename if possible
+            // Load the new model first (outside of the critical section)
+            torch::jit::script::Module new_module = torch::jit::load(full_path);
+            new_module.eval();
+            
+            // Extract chunk size from filename before updating anything
+            int new_chunk_size = n_chunk_size; // Default to current
             try {
                 std::regex pattern(".*h(\\d+)\\.pt$");
                 std::smatch matches;
                 if (std::regex_search(model_file_str, matches, pattern) && matches.size() > 1) {
-                    n_chunk_size = std::stoi(matches[1].str());
+                    new_chunk_size = std::stoi(matches[1].str());
                 }
             } catch (...) {
                 // Keep default chunk size if extraction fails
             }
             
+            // Now safely replace the model with proper synchronization
+            {
+                std::lock_guard<std::mutex> lock(m_model_mutex);
+                m_module = std::move(new_module);
+                n_chunk_size = new_chunk_size;
+            }
+            
             cout << "Model loaded successfully - Chunk size = " << n_chunk_size << endl;
             clear_buffer();
-            feed_zeros_to_model();
             return true;
         }
         catch (const c10::Error& e) {
@@ -587,7 +607,11 @@ private:
                 torch::Tensor zero_tensor = torch::from_blob(zeros.data(), {1, (int)n_chunk_size}, options).clone();
                 std::vector<torch::jit::IValue> inputs;
                 inputs.push_back(zero_tensor);
-                m_module.forward(inputs);
+                
+                {
+                    std::lock_guard<std::mutex> lock(m_model_mutex);
+                    m_module.forward(inputs);
+                }
             }
         }
         catch (const c10::Error& e) {
