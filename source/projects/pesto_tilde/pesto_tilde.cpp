@@ -428,8 +428,9 @@ public:
         }
     }
 
-    // Add this method to get the package models directory
-    std::string get_models_directory() {
+    // Add this method to get the package models directories
+    std::vector<std::string> get_models_directories() {
+        std::vector<std::string> directories;
         try {
             // Get the path to the external
             path external_path = path("pesto~", path::filetype::external);
@@ -438,20 +439,28 @@ public:
             if (external_path) {
                 // Go up two directories from the external to reach the package root
                 fs::path package_path = fs::path(path_str).parent_path().parent_path();
-                // Add models directory
+                
+                // Add both models and other directories
                 fs::path models_path = package_path / "models";
+                fs::path other_path = package_path / "other";
                 
                 // Create models directory if it doesn't exist
                 if (!fs::exists(models_path)) {
                     fs::create_directories(models_path);
                 }
                 
-                return models_path.string();
+                // Add existing directories to the list
+                if (fs::exists(models_path)) {
+                    directories.push_back(models_path.string());
+                }
+                if (fs::exists(other_path)) {
+                    directories.push_back(other_path.string());
+                }
             }
         } catch (const std::exception& e) {
-            cout << "Error getting models directory: " << e.what() << endl;
+            cout << "Error getting models directories: " << e.what() << endl;
         }
-        return "";
+        return directories;
     }
 
     bool load_model(const std::string& model_file_str) {
@@ -461,13 +470,29 @@ public:
                 return false;
             }
 
-            std::string models_dir = get_models_directory();
-            if (models_dir.empty()) {
+            auto models_dirs = get_models_directories();
+            if (models_dirs.empty()) {
+                cout << "No models directories found" << endl;
                 return false;
             }
 
-            // Always look in the models directory
-            std::string full_path = models_dir + "/" + model_file_str;
+            // Try to find the model in any of the directories
+            std::string full_path;
+            bool found = false;
+            
+            for (const auto& dir : models_dirs) {
+                std::string candidate_path = dir + "/" + model_file_str;
+                if (fs::exists(candidate_path)) {
+                    full_path = candidate_path;
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                cout << "Model file not found in any models directory: " << model_file_str << endl;
+                return false;
+            }
             
             // Load the new model first (outside of the critical section)
             torch::jit::script::Module new_module = torch::jit::load(full_path);
@@ -505,23 +530,25 @@ public:
     // Find all compatible models in the models directory
     std::vector<std::pair<std::string, int>> find_compatible_models() {
         std::vector<std::pair<std::string, int>> compatible_models;
-        std::string models_dir = get_models_directory();
+        auto models_dirs = get_models_directories();
         
-        if (models_dir.empty()) return compatible_models;
+        if (models_dirs.empty()) return compatible_models;
 
-        for (const auto& entry : fs::directory_iterator(models_dir)) {
-            if (entry.path().extension() == ".pt") {
-                std::string filename = entry.path().filename().string();
-                std::regex pattern(".*sr(\\d+)k.*h(\\d+)\\.pt$");
-                std::smatch matches;
-                
-                if (std::regex_search(filename, matches, pattern) && matches.size() > 2) {
-                    int model_sr = std::stoi(matches[1].str());
-                    int chunk_size = std::stoi(matches[2].str());
+        for (const auto& models_dir : models_dirs) {
+            for (const auto& entry : fs::directory_iterator(models_dir)) {
+                if (entry.path().extension() == ".pt") {
+                    std::string filename = entry.path().filename().string();
+                    std::regex pattern(".*sr(\\d+)k.*h(\\d+)\\.pt$");
+                    std::smatch matches;
                     
-                    // Check if sample rate matches
-                    if (model_sr == static_cast<int>(m_samplerate / 1000)) {
-                        compatible_models.push_back({filename, chunk_size});
+                    if (std::regex_search(filename, matches, pattern) && matches.size() > 2) {
+                        int model_sr = std::stoi(matches[1].str());
+                        int chunk_size = std::stoi(matches[2].str());
+                        
+                        // Check if sample rate matches
+                        if (model_sr == static_cast<int>(m_samplerate / 1000)) {
+                            compatible_models.push_back({filename, chunk_size});
+                        }
                     }
                 }
             }
