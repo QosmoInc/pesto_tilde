@@ -437,6 +437,12 @@ public:
             std::string path_str = external_path;
             
             if (external_path) {
+                // Add the directory where the .mxo file is located
+                fs::path external_dir = fs::path(path_str).parent_path();
+                if (fs::exists(external_dir)) {
+                    directories.push_back(external_dir.string());
+                }
+                
                 // Go up two directories from the external to reach the package root
                 fs::path package_path = fs::path(path_str).parent_path().parent_path();
                 
