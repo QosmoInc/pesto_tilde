@@ -26,7 +26,7 @@
 
 		<objarg name='init_chunk' optional='0' type='number'>
 			<digest>Specify model chunk size</digest>
-			<description>Specify model chunk size. Specifying a size will load a matching model from pesto/models. Use 0 to load the fastest available model. </description>
+			<description>Specify model chunk size. Specifying a size will load a matching model from pesto/models, this is a required argument </description>
 		</objarg>
 
 	</objarglist>
@@ -36,14 +36,9 @@
 
 	<methodlist>
 
-		<method name='freq'>
-			<digest>Test with a chunk of sinusoidal audio</digest>
-			<description>Test with a chunk of sinusoidal audio. Test model with a single chunk of sine wave input at specified frequency (Hz) to test accuracy. Usage: 'freq 440' </description>
-		</method>
-
 		<method name='test'>
 			<digest>Test inference latency</digest>
-			<description>Test inference latency. Run model inference on random test chunk and report the TorchScript model's inference latency </description>
+			<description>Test inference latency. Run model inference on random test chunk and report the ONNX model's inference latency </description>
 		</method>
 
 		<method name='dspstate'>
@@ -63,7 +58,7 @@
 
 		<method name='model'>
 			<digest>Load a model by filename</digest>
-			<description>Load a model by filename. Searches for and loads a model matching the specified name (e.g., 'model 20251502_sr44k_h512.pt') from pesto/models. Can be used to change models at runtime. </description>
+			<description>Load a model by filename. Searches for and loads a model matching the specified name (e.g., 'model model_name.onnx') from pesto/models. Can be used to change models at runtime. </description>
 		</method>
 
 	</methodlist>

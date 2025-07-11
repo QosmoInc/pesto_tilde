@@ -18,6 +18,8 @@ tmp
 .vs
 .vscode
 libtorch*
+onnxruntime*
 *.pt
+*.onnx
 HowTo-NewObject.md
 package-info.json.in

@@ -2,9 +2,9 @@
 # Use of this source code is governed by the MIT License found in the License.md file.
 cmake_minimum_required(VERSION 3.10)
 
-# Set CMake policy CMP0144 to NEW to allow TORCH_ROOT to be recognized
-if(POLICY CMP0144)
-  cmake_policy(SET CMP0144 NEW)
+# ONNX Runtime integration policies
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)  # For FetchContent timestamps
 endif()
 
 
@@ -12,33 +12,51 @@ set(C74_MIN_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../min-api)
 include(${C74_MIN_API_DIR}/script/min-pretarget.cmake)
 
 if (APPLE)
-	set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+	set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
 endif()
 
 
 #############################################################
-# MAX EXTERNAL
+# ONNX RUNTIME SETUP
 #############################################################
 
+# Include FetchContent module for downloading ONNX Runtime
+include(FetchContent)
 
-include_directories( 
-	"${C74_INCLUDES}"
-	"${TORCH_INSTALL_PREFIX}/include"
-	"${TORCH_INSTALL_PREFIX}/include/torch/csrc/api/include"
+# Set ONNX Runtime install prefix
+set(ONNXRUNTIME_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/../../../onnxruntime")
+
+# Determine platform-specific ONNX Runtime download URLs and filenames
+if(APPLE)
+    set(ONNXRUNTIME_URL "https://github.com/supertone-inc/onnxruntime-build/releases/download/v1.21.1/onnxruntime-osx-universal2-static_lib-1.21.1.tgz")
+    set(ONNXRUNTIME_FILENAME "onnxruntime-osx-universal2-static_lib-1.21.1.tgz")
+elseif(WIN32)
+    set(ONNXRUNTIME_URL "https://github.com/supertone-inc/onnxruntime-build/releases/download/v1.21.1/onnxruntime-win-x64-static_lib-1.21.1.zip")
+    set(ONNXRUNTIME_FILENAME "onnxruntime-win-x64-static_lib-1.21.1.zip")
+else()
+    message(FATAL_ERROR "Unsupported platform for ONNX Runtime")
+endif()
+
+# Download and extract ONNX Runtime if not already present
+if(NOT EXISTS "${ONNXRUNTIME_INSTALL_PREFIX}")
+    message(STATUS "Downloading ONNX Runtime from: ${ONNXRUNTIME_URL}")
+    FetchContent_Declare(
+        onnxruntime
+        URL ${ONNXRUNTIME_URL}
+        SOURCE_DIR ${ONNXRUNTIME_INSTALL_PREFIX}
+    )
+    FetchContent_MakeAvailable(onnxruntime)
+else()
+    message(STATUS "Using existing ONNX Runtime from: ${ONNXRUNTIME_INSTALL_PREFIX}")
+endif()
+
+# Set ONNX Runtime include directories
+include_directories(
+    "${C74_INCLUDES}"
+    "${ONNXRUNTIME_INSTALL_PREFIX}/include"
 )
 
-# Set torch install prefix to the local libtorch directory
-set(TORCH_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch")
-message(STATUS "Using libtorch from: ${TORCH_INSTALL_PREFIX}")
-
-# Tell CMake where to find Torch
-set(Torch_DIR "${TORCH_INSTALL_PREFIX}/share/cmake/Torch")
-list(APPEND CMAKE_PREFIX_PATH "${TORCH_INSTALL_PREFIX}")
-message(STATUS "Torch_DIR set to: ${Torch_DIR}")
-
-# Find libtorch package
-find_package(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+message(STATUS "ONNX Runtime install prefix: ${ONNXRUNTIME_INSTALL_PREFIX}")
 
 set( SOURCE_FILES
 	${PROJECT_NAME}.cpp
@@ -51,16 +69,30 @@ add_library(
 	${SOURCE_FILES}
 )
 
-# Link against torch libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})
+# Link against ONNX Runtime static libraries
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE 
+        "${ONNXRUNTIME_INSTALL_PREFIX}/lib/libonnxruntime.a"
+        "-framework Foundation"
+        "-framework CoreML"
+    )
+elseif(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE 
+        "${ONNXRUNTIME_INSTALL_PREFIX}/lib/onnxruntime.lib"
+    )
+endif()
 
 # Set C++20 standard correctly for all compilers
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 if(MSVC)
-    # Use the correct flag for MSVC to enable C++20
-    target_compile_options(${PROJECT_NAME} PRIVATE "/std:c++latest")
+  # Use the correct flag for MSVC to enable C++20
+  target_compile_options(${PROJECT_NAME} PRIVATE "/std:c++latest")
+else()
+  # For GCC/Clang, explicitly set C++20
+  target_compile_options(${PROJECT_NAME} PRIVATE "-std=c++20")
 endif()
 
 # Set rpath for Mac to look in loader path only, not in absolute paths
@@ -77,48 +109,8 @@ endif()
 
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 
-# Copy torch libraries to the output directory
+# ONNX Runtime uses static libraries, no dynamic library copying needed for macOS
 if (APPLE)
-  # Create a file list variable to handle paths with spaces
-  file(GLOB TORCH_DYLIBS "${TORCH_INSTALL_PREFIX}/lib/*.dylib")
-  
-  foreach(DYLIB ${TORCH_DYLIBS})
-    add_custom_command(
-      TARGET ${PROJECT_NAME}
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${DYLIB}"
-      "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/"
-      COMMENT "Copying ${DYLIB}"
-    )
-  endforeach()
-  
-  # Fix libomp.dylib identifier
-  add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND install_name_tool -id "@loader_path/libomp.dylib"
-    "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/libomp.dylib"
-    COMMENT "Fixing libomp.dylib identifier"
-  )
-  
-  # Fix libomp.dylib reference in libtorch_cpu.dylib
-  add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND install_name_tool -change "/opt/homebrew/opt/libomp/lib/libomp.dylib" "@loader_path/libomp.dylib"
-    "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/libtorch_cpu.dylib"
-    COMMENT "Fixing libomp path in libtorch_cpu.dylib"
-  )
-  
-  # Make sure libomp.dylib is executable
-  add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND chmod +x
-    "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/libomp.dylib"
-    COMMENT "Making libomp.dylib executable"
-  )
 
   if (CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
     add_custom_command( 
@@ -130,33 +122,8 @@ if (APPLE)
   endif()
 endif()
 
+# ONNX Runtime uses static libraries, no DLL copying needed for Windows
 if (MSVC)
-  # Define the support directory path relative to the project root
-  set(SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../support")
-  message(STATUS "Support directory set to: ${SUPPORT_DIR}")
-  
-  # Create support directory if it doesn't exist
-  add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-    "${SUPPORT_DIR}"
-    COMMENT "Creating support directory if it doesn't exist"
-  )
-
-  # Copy all torch DLLs to both externals and support directories
-  file(GLOB TORCH_DLLS "${TORCH_INSTALL_PREFIX}/lib/*.dll")
-  
-  foreach(DLL ${TORCH_DLLS})
-    # Copy to support directory
-    add_custom_command(
-      TARGET ${PROJECT_NAME}
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${DLL}"
-      "${SUPPORT_DIR}/"
-      COMMENT "Copying ${DLL} to support"
-    )
-  endforeach()
-
+  # No additional setup needed for static libraries
+  message(STATUS "Using ONNX Runtime static libraries for Windows")
 endif()

@@ -4,13 +4,13 @@
 		"appversion" : 		{
 			"major" : 9,
 			"minor" : 0,
-			"revision" : 5,
+			"revision" : 7,
 			"architecture" : "x64",
 			"modernui" : 1
 		}
 ,
 		"classnamespace" : "box",
-		"rect" : [ 100.0, 100.0, 743.0, 627.0 ],
+		"rect" : [ 100.0, 93.0, 765.0, 671.0 ],
 		"gridsize" : [ 15.0, 15.0 ],
 		"integercoordinates" : 1,
 		"boxes" : [ 			{
@@ -187,7 +187,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 438.0, 341.0, 150.0, 20.0 ],
+					"patching_rect" : [ 461.0, 341.0, 150.0, 20.0 ],
 					"text" : "Load explicit model name"
 				}
 
@@ -198,7 +198,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 319.0, 305.0, 150.0, 20.0 ],
+					"patching_rect" : [ 313.0, 305.0, 150.0, 20.0 ],
 					"text" : "Change chunk value"
 				}
 
@@ -210,8 +210,8 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 258.0, 340.0, 174.0, 22.0 ],
-					"text" : "model 250521_sr44k_h1024.pt"
+					"patching_rect" : [ 258.0, 340.0, 201.0, 22.0 ],
+					"text" : "model mir-1k_g7_44100_1024.onnx"
 				}
 
 			}
@@ -222,8 +222,8 @@
 					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 243.0, 304.0, 71.0, 22.0 ],
-					"text" : "chunk 1024"
+					"patching_rect" : [ 243.0, 304.0, 64.0, 22.0 ],
+					"text" : "chunk 512"
 				}
 
 			}
@@ -331,8 +331,8 @@
 					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "", "", "" ],
-					"patching_rect" : [ 166.0, 432.0, 133.0, 22.0 ],
-					"text" : "pesto~ 128 @conf 0.98"
+					"patching_rect" : [ 166.0, 432.0, 140.0, 22.0 ],
+					"text" : "pesto~ 1024 @conf 0.98"
 				}
 
 			}
@@ -350,7 +350,7 @@
 		"lines" : [ 			{
 				"patchline" : 				{
 					"destination" : [ "obj-11", 0 ],
-					"midpoints" : [ 232.5, 512.0, 320.5, 512.0 ],
+					"midpoints" : [ 236.0, 512.0, 320.5, 512.0 ],
 					"source" : [ "obj-1", 1 ]
 				}
 
@@ -358,7 +358,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-13", 0 ],
-					"midpoints" : [ 289.5, 545.0, 320.5, 545.0 ],
+					"midpoints" : [ 296.5, 545.0, 320.5, 545.0 ],
 					"source" : [ "obj-1", 2 ]
 				}
 
@@ -421,7 +421,6 @@
 
 			}
  ],
-		"originid" : "pat-11",
 		"dependency_cache" : [ 			{
 				"name" : "pesto~.mxo",
 				"type" : "iLaX"
