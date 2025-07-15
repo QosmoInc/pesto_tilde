@@ -100,8 +100,61 @@ public:
     MIN_AUTHOR		{"Qosmo"};
     MIN_RELATED		{"fzero~, fiddle~, sigmund~"};
 
+    // Model search attributes
+    attribute<symbol> checkpoint { this, "checkpoint", symbol("mir-1k_g7"),
+        description {"Model checkpoint name (prefix for model files)"}
+    };
+
+    attribute<std::vector<int>> sample_rates { this, "sample_rates", {44100, 48000, 96000},
+        description {"List of sample rates to search for in models"}
+    };
+
+    attribute<std::vector<int>> chunk_sizes { this, "chunk_sizes", {128, 256, 512, 1024},
+        description {"List of chunk sizes to search for in models"}
+    };
+
     // Initial chunk size argument that determines target model size at initialization
-    argument<number> init_chunk {this, "init_chunk", "Specify model chunk size. Specifying a size will load a matching model from pesto/models, this is a required argument", true};
+    // Placed after attributes so they are initialized first
+    argument<number> init_chunk {this, "init_chunk", "Specify model chunk size. Specifying a size will load a matching model from pesto/models, this is a required argument", true,
+        MIN_ARGUMENT_FUNCTION {
+            double chunk_value = static_cast<double>(arg);
+            if (chunk_value <= 0) {
+                error("Chunk size must be positive");
+                return;
+            }
+            m_target_chunk = chunk_value;
+            
+            // Debug: check attribute values
+            cout << "Checkpoint: " << std::string(checkpoint.get()) << endl;
+            cout << "Sample rates size: " << sample_rates.get().size() << endl;
+            cout << "Chunk sizes size: " << chunk_sizes.get().size() << endl;
+            
+            // Attributes should now be initialized to their defaults
+            // Find models using the initialized attributes
+            find_models();
+            
+            // Check models found
+            if (m_found_models.empty()) {
+                error("No models found. Make sure .onnx model files are in Max's search path with naming pattern: " + 
+                      std::string(checkpoint.get()) + "_<samplerate>_<chunksize>.onnx");
+                return;
+            }
+            
+            // Find best model with requested chunk size
+            auto best_match = best_model(m_target_chunk);
+            
+            if (best_match.filename.empty()) {
+                error("No model found with chunk size " + std::to_string(m_target_chunk) + ". " + get_available_chunk_sizes_string());
+                return;
+            }
+            
+            // Try to load the model
+            if (!load_model(best_match)) {
+                error("Failed to load model: " + best_match.filename);
+                return;
+            }
+        }
+    };
 
     // This message is called once the object is fully constructed
     message<> maxclass_setup { this, "maxclass_setup",
@@ -119,11 +172,10 @@ public:
                 std::string target_path_str = args[0];
                 
                 // Find the ModelInfo for this filename
-                auto all_models = list_models();
-                auto it = std::find_if(all_models.begin(), all_models.end(),
+                auto it = std::find_if(m_found_models.begin(), m_found_models.end(),
                                     [&target_path_str](const auto& model) { return model.filename == target_path_str; });
                 
-                if (it != all_models.end()) {
+                if (it != m_found_models.end()) {
                     // Try to load the model
                     if (load_model(*it)) {
                         // Model loaded successfully, update state
@@ -205,6 +257,14 @@ public:
         MIN_FUNCTION {
             clear_buffer();
             clear_cache();
+            return {};
+        }
+    };
+    
+    message<> refresh { this, "refresh", "Refresh the models list based on current attribute settings.",
+        MIN_FUNCTION {
+            find_models();
+            cout << "Refreshed models list. Found " << m_found_models.size() << " models." << endl;
             return {};
         }
     };
@@ -292,6 +352,21 @@ public:
         }
     };
 
+    // File usage message for collective/standalone building
+    message<> fileusage { this, "fileusage", "Register files for collective/standalone building",
+        MIN_FUNCTION {
+            if (args.size() > 0) {
+                void* w = args[0]; // Handle to the file usage builder
+                
+                // Register all found model files individually
+                for (const auto& model : m_found_models) {
+                    c74::max::fileusage_addfile(w, 0, model.filename.c_str(), model.path_id);
+                }
+            }
+            return {};
+        }
+    };
+
     // Process incoming audio and collect into buffer
     void operator()(audio_bundle input, audio_bundle output) {
         if (!m_dsp_active) return;
@@ -326,23 +401,15 @@ public:
         }
     }
 
-    pesto(const atoms& args = {}) : m_data_ready(0), m_result_ready(1), m_should_stop(false), 
-                                    m_ort_env(ORT_LOGGING_LEVEL_WARNING, "pesto_tilde") {
+    // Get shared ONNX Runtime environment
+    static Ort::Env& get_ort_env() {
+        static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "pesto_tilde");
+        return env;
+    }
+
+    pesto() : m_data_ready(0), m_result_ready(1), m_should_stop(false) {
         
-        // Validate required argument
-        if (args.empty()) {
-            error("Required argument missing: chunk size must be specified. Use 'pesto~ <chunk_size>'.");
-            return;
-        }
-        
-        // Check if any models exist - fail early if models directory is empty
-        auto all_models = list_models();
-        if (all_models.empty()) {
-            error("No models found in models directory");
-            return;
-        }
-        
-        m_target_chunk = args[0];
+        m_target_chunk = -1; // Will be set by argument handler
         m_target_path = symbol(""); // Clear target path for initialization
         n_chunk_size = 512; 
         m_samplerate = c74::max::sys_getsr();
@@ -368,22 +435,6 @@ public:
         m_cache_shape.resize(2);
         m_input_tensors.reserve(2);
         
-        // Try to load the model first - if this fails, we can still call error()
-        if (m_target_chunk != -1) {
-            // Find best model with requested chunk size
-            auto best_match = best_model(m_target_chunk);
-            
-            if (best_match.filename.empty()) {
-                error("No model found with chunk size " + std::to_string(m_target_chunk) + ". " + get_available_chunk_sizes_string());
-                return;
-            }
-            
-            // Try to load the model
-            if (!load_model(best_match)) {
-                error("Failed to load model: " + best_match.filename);
-                return;
-            }
-        }
         
         // Only start inference thread if model loaded successfully (or no model specified)
         m_inference_thread = std::make_unique<std::thread>([this]() {
@@ -394,6 +445,9 @@ public:
                 }
             }
         });
+        
+        // Mark object as fully constructed
+        m_fully_constructed = true;
     }
     
     ~pesto() {
@@ -405,6 +459,12 @@ public:
         if (m_inference_thread && m_inference_thread->joinable()) {
             m_inference_thread->join();
         }
+        
+        // Clear session but leave environment alone (let it destruct naturally)
+        {
+            std::lock_guard<std::mutex> lock(m_model_mutex);
+            m_ort_session.reset();
+        }
     }
 
 
@@ -413,64 +473,68 @@ public:
         std::string filename;
         int sample_rate;
         int chunk_size;
+        short path_id = 0; // Max path ID for file location
     };
     
-    // List all .onnx models in the models directory
-    std::vector<ModelInfo> list_models() {
-        std::vector<ModelInfo> models;
-        
+    // Find models using Max's search path system based on attributes
+    void find_models() {
         try {
-            // Get the path to the external
-            path external_path = path("pesto~", path::filetype::external);
-            std::string path_str = external_path;
+            m_found_models.clear();
             
-            if (!external_path) {
-                return models; // Empty list if path invalid
-            }
-            
-            // Go up two directories from the external to reach the package root
-            fs::path package_path = fs::path(path_str).parent_path().parent_path();
-            fs::path models_path = package_path / "models";
-            
-            // Create models directory if it doesn't exist
-            if (!fs::exists(models_path)) {
-                fs::create_directories(models_path);
-                return models; // Empty list if newly created
-            }
-            
-            // Find all .onnx files and extract sample rates and chunk sizes
-            for (const auto& entry : fs::directory_iterator(models_path)) {
-                if (entry.path().extension() == ".onnx") {
-                    std::string filename = entry.path().filename().string();
-                    std::regex pattern(".*_(\\d+)_(\\d+)\\.onnx$");
-                    std::smatch matches;
+            std::string checkpoint_str = std::string(checkpoint.get());
+        
+        // Iterate through all combinations of sample rates and chunk sizes
+        for (int sr : sample_rates.get()) {
+            for (int chunk : chunk_sizes.get()) {
+                // Construct filename without extension: <checkpoint>_<sr>_<chunk>
+                std::string filename_base = checkpoint_str + "_" + std::to_string(sr) + "_" + std::to_string(chunk);
+                
+                // Try to locate this file using Max's search path
+                char search_filename[c74::max::MAX_FILENAME_CHARS];
+                strcpy(search_filename, filename_base.c_str());
+                
+                short path_id = 0;
+                c74::max::t_fourcc outtype;
+                c74::max::t_fourcc filetypes[] = {'onnx'};
+                
+                cout << "Searching for: " << filename_base << " with filetype 'onnx'" << endl;
+                
+                // Try with onnx filetype specified (pass array and count)
+                auto result = c74::max::locatefile_extended(search_filename, &path_id, &outtype, filetypes, 1);
+                cout << "Search result: " << result << " for " << search_filename << endl;
+                
+                if (result == 0) {
+                    cout << "Found model: " << search_filename << " at path_id: " << path_id << endl;
+                    // File found! Store it
+                    ModelInfo model_info;
+                    model_info.filename = search_filename;
+                    model_info.sample_rate = sr;
+                    model_info.chunk_size = chunk;
+                    model_info.path_id = path_id;
                     
-                    if (std::regex_search(filename, matches, pattern) && matches.size() > 2) {
-                        int sample_rate = std::stoi(matches[1].str());
-                        int chunk_size = std::stoi(matches[2].str());
-                        models.push_back({filename, sample_rate, chunk_size});
-                    }
+                    m_found_models.push_back(model_info);
                 }
             }
-            
-            // Sort by chunk size
-            std::sort(models.begin(), models.end(),
-                     [](const auto& a, const auto& b) { return a.chunk_size < b.chunk_size; });
-            
-        } catch (const std::exception& e) {
-            cout << "Error listing models: " << e.what() << endl;
         }
         
-        return models;
+            // Sort by chunk size for consistent ordering
+            std::sort(m_found_models.begin(), m_found_models.end(),
+                     [](const auto& a, const auto& b) { return a.chunk_size < b.chunk_size; });
+        }
+        catch (const std::exception& e) {
+            // If find_models fails during construction, just continue with empty model list
+            // This can happen if attributes aren't fully initialized yet
+            m_found_models.clear();
+        }
     }
+    
     
     // Find the best model that exactly matches chunk size and has closest sample rate
     ModelInfo best_model(int target_chunk_size) {
-        auto all_models = list_models();
         ModelInfo best_match = {"", 0, 0}; // Empty ModelInfo
         int closest_sr_diff = INT_MAX;
         
-        for (const auto& model : all_models) {
+        for (const auto& model : m_found_models) {
             // Only consider models with exact chunk size match
             if (model.chunk_size == target_chunk_size) {
                 int sr_diff = abs(model.sample_rate - static_cast<int>(m_samplerate));
@@ -508,25 +572,26 @@ public:
                 return true; // Already loaded, no need to reload
             }
 
-            // Get the models directory path
-            path external_path = path("pesto~", path::filetype::external);
-            if (!external_path) {
-                cout << "Cannot find external path" << endl;
+            // Find the corresponding FoundModel to get the path ID
+            auto found_it = std::find_if(m_found_models.begin(), m_found_models.end(),
+                [&model_info](const auto& found) { 
+                    return found.filename == model_info.filename; 
+                });
+            
+            if (found_it == m_found_models.end()) {
+                cout << "Model not found in search results: " << model_info.filename << endl;
                 return false;
             }
             
-            fs::path package_path = fs::path(std::string(external_path)).parent_path().parent_path();
-            fs::path models_path = package_path / "models";
-            
-            // Try to find the model in the models directory
-            std::string full_path = models_path.string() + "/" + model_info.filename;
-            if (!fs::exists(full_path)) {
-                cout << "Model file not found: " << model_info.filename << endl;
+            // Use Max API to get the full path from path ID and filename
+            char full_path[c74::max::MAX_PATH_CHARS];
+            if (c74::max::path_topathname(found_it->path_id, found_it->filename.c_str(), full_path) != 0) {
+                cout << "Failed to resolve path for model: " << model_info.filename << endl;
                 return false;
             }
             
-            // Load the new ONNX model first (outside of the critical section)
-            auto new_session = std::make_unique<Ort::Session>(m_ort_env, full_path.c_str(), m_session_options);
+            // Load the new ONNX model using the resolved path
+            auto new_session = std::make_unique<Ort::Session>(get_ort_env(), full_path, m_session_options);
             
             // Use chunk size from ModelInfo
             int new_chunk_size = model_info.chunk_size;
@@ -602,11 +667,10 @@ public:
     
     // Get a formatted list of available chunk sizes for error messages
     std::string get_available_chunk_sizes_string() {
-        auto all_models = list_models();
         std::set<int> unique_chunk_sizes;
         
         // Collect unique chunk sizes
-        for (const auto& model : all_models) {
+        for (const auto& model : m_found_models) {
             unique_chunk_sizes.insert(model.chunk_size);
         }
         
@@ -622,11 +686,10 @@ public:
     
     // Get a formatted list of available model files for error messages
     std::string get_available_models_string() {
-        auto all_models = list_models();
         std::string result = "Available models: ";
-        for (size_t i = 0; i < all_models.size(); ++i) {
-            result += all_models[i].filename;
-            if (i < all_models.size() - 1) {
+        for (size_t i = 0; i < m_found_models.size(); ++i) {
+            result += m_found_models[i].filename;
+            if (i < m_found_models.size() - 1) {
                 result += ", ";
             }
         }
@@ -647,6 +710,10 @@ private:
     float m_sr_offset = 0.0f;   // Sample rate conversion offset for MIDI output
     bool m_error_reported = false; // Flag for error reporting
     int m_audio_frames_without_model = 0; // Counter for audio frames processed without model
+    
+    // Model storage for Max search path system
+    std::vector<ModelInfo> m_found_models; // Models found via Max search path
+    bool m_fully_constructed = false; // Flag to prevent attribute setters from running during construction
     
     // Threading and buffer components
     CircularBuffer m_in_buffer; // Circular buffer for audio input
@@ -670,7 +737,6 @@ private:
     std::unique_ptr<Ort::Session> m_ort_session;
     std::vector<float> m_cache_state;
     size_t m_cache_size;
-    Ort::Env m_ort_env;
     Ort::SessionOptions m_session_options;
     Ort::MemoryInfo m_memory_info{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
     
