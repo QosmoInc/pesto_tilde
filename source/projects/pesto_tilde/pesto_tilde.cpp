@@ -105,7 +105,7 @@ public:
         description {"Model checkpoint name (prefix for model files)"}
     };
 
-    attribute<std::vector<int>> sample_rates { this, "sample_rates", {44100, 48000, 96000},
+    attribute<std::vector<int>> sample_rates { this, "sample_rates", {44100, 48000},
         description {"List of sample rates to search for in models"}
     };
 
@@ -123,11 +123,6 @@ public:
                 return;
             }
             m_target_chunk = chunk_value;
-            
-            // Debug: check attribute values
-            cout << "Checkpoint: " << std::string(checkpoint.get()) << endl;
-            cout << "Sample rates size: " << sample_rates.get().size() << endl;
-            cout << "Chunk sizes size: " << chunk_sizes.get().size() << endl;
             
             // Attributes should now be initialized to their defaults
             // Find models using the initialized attributes
@@ -485,14 +480,10 @@ public:
                 short path_id = 0;
                 c74::max::t_fourcc outtype;
                 
-                cout << "Searching for: " << filename_base << endl;
-                
                 // Search without file type filter (since 'onnx' is not a known Max type)
                 auto result = c74::max::locatefile_extended(search_filename, &path_id, &outtype, nullptr, 0);
-                cout << "Search result: " << result << " for " << search_filename << endl;
                 
                 if (result == 0) {
-                    cout << "Found model: " << search_filename << " at path_id: " << path_id << endl;
                     // File found! Store it
                     ModelInfo model_info;
                     model_info.filename = search_filename;
@@ -571,9 +562,6 @@ public:
                 return false;
             }
             
-            // Load model from memory buffer instead of file path
-            cout << "Loading model from memory buffer: " << model_info.filename << endl;
-            
             // Open file using Max's file system
             c74::max::t_filehandle fh;
             if (c74::max::path_opensysfile(found_it->filename.c_str(), found_it->path_id, &fh, c74::max::READ_PERM) != 0) {
@@ -589,8 +577,6 @@ public:
                 return false;
             }
             
-            cout << "Model file size: " << file_size << " bytes" << endl;
-            
             // Allocate buffer and read file
             std::vector<char> buffer(file_size);
             c74::max::t_ptr_size bytes_read = file_size;
@@ -601,13 +587,11 @@ public:
             }
             
             c74::max::sysfile_close(fh);
-            cout << "Read " << bytes_read << " bytes from file" << endl;
             
             // Load the new ONNX model from memory buffer with comprehensive error handling
             std::unique_ptr<Ort::Session> new_session;
             try {
                 new_session = std::make_unique<Ort::Session>(get_ort_env(), buffer.data(), buffer.size(), m_session_options);
-                cout << "ONNX session created successfully from memory buffer" << endl;
             } catch (const Ort::Exception& e) {
                 cout << "ONNX Exception: " << e.what() << endl;
                 cout << "Error code: " << e.GetOrtErrorCode() << endl;
