@@ -358,9 +358,9 @@ public:
             if (args.size() > 0) {
                 void* w = args[0]; // Handle to the file usage builder
                 
-                // Register all found model files individually
+                // Register all found model files individually with extract to temp folder flag
                 for (const auto& model : m_found_models) {
-                    c74::max::fileusage_addfile(w, 0, model.filename.c_str(), model.path_id);
+                    c74::max::fileusage_addfile(w, c74::max::COLLECTIVE_EXTRACTTOTEMPFOLDER, model.filename.c_str(), model.path_id);
                 }
             }
             return {};
@@ -487,20 +487,19 @@ public:
         for (int sr : sample_rates.get()) {
             for (int chunk : chunk_sizes.get()) {
                 // Construct filename without extension: <checkpoint>_<sr>_<chunk>
-                std::string filename_base = checkpoint_str + "_" + std::to_string(sr) + "_" + std::to_string(chunk);
+                std::string filename_base = checkpoint_str + "_" + std::to_string(sr) + "_" + std::to_string(chunk) + ".onnx";
                 
                 // Try to locate this file using Max's search path
-                char search_filename[c74::max::MAX_FILENAME_CHARS];
+                char search_filename[c74::max::MAX_PATH_CHARS];
                 strcpy(search_filename, filename_base.c_str());
                 
                 short path_id = 0;
                 c74::max::t_fourcc outtype;
-                c74::max::t_fourcc filetypes[] = {'onnx'};
                 
-                cout << "Searching for: " << filename_base << " with filetype 'onnx'" << endl;
+                cout << "Searching for: " << filename_base << endl;
                 
-                // Try with onnx filetype specified (pass array and count)
-                auto result = c74::max::locatefile_extended(search_filename, &path_id, &outtype, filetypes, 1);
+                // Search without file type filter (since 'onnx' is not a known Max type)
+                auto result = c74::max::locatefile_extended(search_filename, &path_id, &outtype, nullptr, 0);
                 cout << "Search result: " << result << " for " << search_filename << endl;
                 
                 if (result == 0) {
@@ -590,8 +589,34 @@ public:
                 return false;
             }
             
-            // Load the new ONNX model using the resolved path
-            auto new_session = std::make_unique<Ort::Session>(get_ort_env(), full_path, m_session_options);
+            // Convert to native filesystem path format
+            char native_path[c74::max::MAX_PATH_CHARS];
+            if (c74::max::path_nameconform(full_path, native_path, c74::max::PATH_STYLE_NATIVE, c74::max::PATH_TYPE_PATH) != 0) {
+                cout << "Failed to convert path format for model: " << model_info.filename << endl;
+                return false;
+            }
+            
+            cout << "Loading model from: " << native_path << endl;
+            
+            // Load the new ONNX model using the converted path with comprehensive error handling
+            std::unique_ptr<Ort::Session> new_session;
+            try {
+                new_session = std::make_unique<Ort::Session>(get_ort_env(), native_path, m_session_options);
+                cout << "ONNX session created successfully" << endl;
+            } catch (const Ort::Exception& e) {
+                cout << "ONNX Exception: " << e.what() << endl;
+                cout << "Error code: " << e.GetOrtErrorCode() << endl;
+                return false;
+            } catch (const std::bad_alloc& e) {
+                cout << "Memory allocation failed: " << e.what() << endl;
+                return false;
+            } catch (const std::exception& e) {
+                cout << "Standard exception: " << e.what() << endl;
+                return false;
+            } catch (...) {
+                cout << "Unknown exception occurred during model loading" << endl;
+                return false;
+            }
             
             // Use chunk size from ModelInfo
             int new_chunk_size = model_info.chunk_size;
@@ -605,7 +630,8 @@ public:
                 auto cache_shape = new_session->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
                 m_cache_size = cache_shape[1]; // Assuming shape is [batch_size, cache_size]
             } else {
-                throw std::runtime_error("Model must have at least 2 inputs (audio and cache)");
+                cout << "Error: Model must have at least 2 inputs (audio and cache)" << endl;
+                return false;
             }
             
             // Store input/output names properly as strings
