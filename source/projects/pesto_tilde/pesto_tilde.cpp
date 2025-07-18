@@ -216,9 +216,11 @@ public:
     };
 
     inlet<>  input	{ this, "(signal) audio input, (bang) clear buffers and reset model state" };
-    outlet<> pitch_output	{ this, "(float) model's pitch prediction in MIDI note number" };
-    outlet<> confidence_output	{ this, "(float) model's confidence prediction (0-1)" };
-    outlet<> amplitude_output	{ this, "(float) model's amplitude prediction" };
+    
+    // Outlets are created dynamically after model loading
+    std::unique_ptr<outlet<>> pitch_output;
+    std::unique_ptr<outlet<>> confidence_output;
+    std::unique_ptr<outlet<>> amplitude_output;
 
     // Confidence threshold
     attribute<number> conf { this, "conf", 0.0,
@@ -371,20 +373,9 @@ public:
     void operator()(audio_bundle input, audio_bundle output) {
         if (!m_dsp_active) return;
         
-        // Count audio frames regardless of model state
+        // Return early if no model is loaded
         if (m_current_model.filename.empty()) {
-            m_audio_frames_without_model += input.frame_count();
-            // Only show error after processing audio for ~0.5 second (22050 frames at 44.1kHz)
-            if (m_audio_frames_without_model > 22050 && !m_error_reported) {
-                cerr << "An instance of 'pesto~' does not have a model loaded." << endl;
-                cerr << "Specify a chunk_size with 'pesto~ <chunk_size>'" << endl;
-                m_error_reported = true;
-            }
-            return; // Don't process audio if no model
-        } else {
-            // Reset counter when model is loaded
-            m_audio_frames_without_model = 0;
-            m_error_reported = false;
+            return;
         }
         
         auto in = input.samples(0);
@@ -418,8 +409,6 @@ public:
         m_confidence_threshold = 0.0;
         m_amplitude_threshold = 0.0;
         m_current_model = {"", 0, 0}; // Empty model info (no model loaded)
-        m_error_reported = false;
-        m_audio_frames_without_model = 0;
         
         // Initialize buffers
         int buffer_size = power_ceil(std::max(n_chunk_size, 4096));
@@ -698,6 +687,15 @@ public:
             m_current_model = model_info;
             sr_convert(m_current_model.sample_rate); // Calculate sample rate offset
             clear_buffer();
+            
+            // Create outlets now that model is loaded
+            if (!pitch_output) {
+                pitch_output = std::make_unique<outlet<>>(this, "(float) model's pitch prediction in MIDI note number");
+                confidence_output = std::make_unique<outlet<>>(this, "(float) model's confidence prediction (0-1)");
+                amplitude_output = std::make_unique<outlet<>>(this, "(float) model's amplitude prediction");
+                cout << "Created model outputs" << endl;
+            }
+            
             return true;
         }
         catch (const Ort::Exception& e) {
@@ -750,8 +748,6 @@ private:
     symbol m_target_path;       // Target model path for model message
     int m_target_chunk;         // Target chunk size for chunk message
     float m_sr_offset = 0.0f;   // Sample rate conversion offset for MIDI output
-    bool m_error_reported = false; // Flag for error reporting
-    int m_audio_frames_without_model = 0; // Counter for audio frames processed without model
     
     // Model storage for Max search path system
     std::vector<ModelInfo> m_found_models; // Models found via Max search path
@@ -876,24 +872,22 @@ private:
             return; // Not enough samples available
         }
         
-        m_error_reported = false;
-        
         // Thread-safe model inference using helper
         std::lock_guard<std::mutex> lock(m_model_mutex);
         auto result = run_model_inference(m_model_input_buffer.get(), true);
         
-        if (result.success) {
+        if (result.success && pitch_output) {
             // Apply confidence and amplitude thresholds
             if ((m_confidence_threshold > 0.0 && result.confidence < m_confidence_threshold) ||
                 (m_amplitude_threshold > 0.0 && result.amplitude < m_amplitude_threshold)) {
-                pitch_output.send(SILENCE_PITCH_VALUE);
+                pitch_output->send(SILENCE_PITCH_VALUE);
             } else {
                 // Apply sample rate conversion offset to MIDI pitch
-                pitch_output.send(result.pitch + m_sr_offset);
+                pitch_output->send(result.pitch + m_sr_offset);
             }
             
-            confidence_output.send(result.confidence);
-            amplitude_output.send(result.amplitude);
+            confidence_output->send(result.confidence);
+            amplitude_output->send(result.amplitude);
         }
     }
 };
