@@ -358,9 +358,9 @@ public:
             if (args.size() > 0) {
                 void* w = args[0]; // Handle to the file usage builder
                 
-                // Register all found model files individually with extract to temp folder flag
+                // Register all found model files individually
                 for (const auto& model : m_found_models) {
-                    c74::max::fileusage_addfile(w, c74::max::COLLECTIVE_EXTRACTTOTEMPFOLDER, model.filename.c_str(), model.path_id);
+                    c74::max::fileusage_addfile(w, 0, model.filename.c_str(), model.path_id);
                 }
             }
             return {};
@@ -582,27 +582,43 @@ public:
                 return false;
             }
             
-            // Use Max API to get the full path from path ID and filename
-            char full_path[c74::max::MAX_PATH_CHARS];
-            if (c74::max::path_topathname(found_it->path_id, found_it->filename.c_str(), full_path) != 0) {
-                cout << "Failed to resolve path for model: " << model_info.filename << endl;
+            // Load model from memory buffer instead of file path
+            cout << "Loading model from memory buffer: " << model_info.filename << endl;
+            
+            // Open file using Max's file system
+            c74::max::t_filehandle fh;
+            if (c74::max::path_opensysfile(found_it->filename.c_str(), found_it->path_id, &fh, c74::max::READ_PERM) != 0) {
+                cout << "Failed to open file: " << model_info.filename << endl;
                 return false;
             }
             
-            // Convert to native filesystem path format
-            char native_path[c74::max::MAX_PATH_CHARS];
-            if (c74::max::path_nameconform(full_path, native_path, c74::max::PATH_STYLE_NATIVE, c74::max::PATH_TYPE_PATH) != 0) {
-                cout << "Failed to convert path format for model: " << model_info.filename << endl;
+            // Get file size
+            c74::max::t_ptr_size file_size;
+            if (c74::max::sysfile_geteof(fh, &file_size) != 0) {
+                cout << "Failed to get file size for: " << model_info.filename << endl;
+                c74::max::sysfile_close(fh);
                 return false;
             }
             
-            cout << "Loading model from: " << native_path << endl;
+            cout << "Model file size: " << file_size << " bytes" << endl;
             
-            // Load the new ONNX model using the converted path with comprehensive error handling
+            // Allocate buffer and read file
+            std::vector<char> buffer(file_size);
+            c74::max::t_ptr_size bytes_read = file_size;
+            if (c74::max::sysfile_read(fh, &bytes_read, buffer.data()) != 0) {
+                cout << "Failed to read file: " << model_info.filename << endl;
+                c74::max::sysfile_close(fh);
+                return false;
+            }
+            
+            c74::max::sysfile_close(fh);
+            cout << "Read " << bytes_read << " bytes from file" << endl;
+            
+            // Load the new ONNX model from memory buffer with comprehensive error handling
             std::unique_ptr<Ort::Session> new_session;
             try {
-                new_session = std::make_unique<Ort::Session>(get_ort_env(), native_path, m_session_options);
-                cout << "ONNX session created successfully" << endl;
+                new_session = std::make_unique<Ort::Session>(get_ort_env(), buffer.data(), buffer.size(), m_session_options);
+                cout << "ONNX session created successfully from memory buffer" << endl;
             } catch (const Ort::Exception& e) {
                 cout << "ONNX Exception: " << e.what() << endl;
                 cout << "Error code: " << e.GetOrtErrorCode() << endl;
