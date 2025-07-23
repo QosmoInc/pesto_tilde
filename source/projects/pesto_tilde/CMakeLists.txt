@@ -82,7 +82,9 @@ elseif(WIN32)
     )
 endif()
 
-# Set C++20 standard correctly for all compilers
+include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
+
+# Override min-api C++17 setting with C++20 (must be after min-posttarget.cmake)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
@@ -106,8 +108,6 @@ if (APPLE)
   # Clear CMAKE_INSTALL_RPATH to avoid absolute paths
   set(CMAKE_INSTALL_RPATH "")
 endif()
-
-include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 
 # ONNX Runtime uses static libraries, no dynamic library copying needed for macOS
 if (APPLE)

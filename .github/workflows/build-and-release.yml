@@ -1,0 +1,200 @@
+name: Build and Release pesto~
+
+on:
+  push:
+    branches: [ main, max-file-handling ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+jobs:
+  build-and-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS-Universal
+            cpp_compiler: clang++
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+            external_ext: .mxo
+          - os: windows-latest
+            name: Windows-x64
+            cmake_args: -G "Visual Studio 17 2022" -T host=x64 -A x64
+            external_ext: .mxe64
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+        fetch-depth: 0
+
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.25'
+
+    - name: Setup MSVC Environment (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }} -S .
+
+    - name: Build
+      run: cmake --build build --config Release --parallel
+
+    - name: Sign macOS Binary (if macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        # Ad-hoc signing for distribution
+        codesign --force --deep -s - externals/pesto~${{ matrix.external_ext }}
+      continue-on-error: true
+
+    - name: Upload External for Combined Release
+      uses: actions/upload-artifact@v4
+      with:
+        name: external-${{ matrix.name }}
+        path: externals/pesto~${{ matrix.external_ext }}
+        retention-days: 30
+
+  # Create combined release package with both platforms
+  create-combined-release:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' || github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Download all externals
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create combined package
+      shell: bash
+      run: |
+        # Create package directory structure
+        mkdir -p package/pesto_tilde/externals
+        
+        # Copy macOS external
+        if [ -f "artifacts/external-macOS-Universal/pesto~.mxo" ]; then
+          cp -r artifacts/external-macOS-Universal/pesto~.mxo package/pesto_tilde/externals/
+        fi
+        
+        # Copy Windows external
+        if [ -f "artifacts/external-Windows-x64/pesto~.mxe64" ]; then
+          cp artifacts/external-Windows-x64/pesto~.mxe64 package/pesto_tilde/externals/
+        fi
+        
+        # Copy all shared Max package files
+        [ -d "help" ] && cp -r help package/pesto_tilde/
+        [ -d "docs" ] && cp -r docs package/pesto_tilde/
+        [ -d "misc" ] && cp -r misc package/pesto_tilde/
+        [ -d "patchers" ] && cp -r patchers package/pesto_tilde/
+        
+        # Copy documentation and metadata files
+        [ -f "ReadMe.md" ] && cp ReadMe.md package/pesto_tilde/
+        [ -f "License.md" ] && cp License.md package/pesto_tilde/
+        [ -f "package-info.json" ] && cp package-info.json package/pesto_tilde/
+        [ -f "icon.png" ] && cp icon.png package/pesto_tilde/
+        
+        # Show package contents
+        echo "Combined package contents:"
+        find package/pesto_tilde -type f | sort
+
+    - name: Create combined zip
+      shell: bash
+      run: |
+        cd package
+        zip -r ../pesto_tilde-combined.zip pesto_tilde/
+
+    - name: Upload Combined Package Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pesto_tilde-combined
+        path: pesto_tilde-combined.zip
+        retention-days: 30
+
+    - name: Create release info
+      if: github.event_name == 'release'
+      run: |
+        echo "# pesto~ Release ${{ github.event.release.tag_name }}" > release-info.md
+        echo "" >> release-info.md
+        echo "This combined release includes:" >> release-info.md
+        echo "- **macOS Universal (.mxo)**: Compatible with both Intel and Apple Silicon Macs" >> release-info.md
+        echo "- **Windows x64 (.mxe64)**: Compatible with 64-bit Windows systems" >> release-info.md
+        echo "" >> release-info.md
+        echo "## Installation" >> release-info.md
+        echo "1. Download the combined package below" >> release-info.md
+        echo "2. Extract to your Max Packages folder:" >> release-info.md
+        echo "   - **macOS**: ~/Documents/Max 8/Packages/" >> release-info.md
+        echo "   - **Windows**: C:\\\\Users\\\\[Username]\\\\Documents\\\\Max 8\\\\Packages\\\\" >> release-info.md
+        echo "3. Restart Max/MSP" >> release-info.md
+        echo "" >> release-info.md
+        echo "Built from commit: ${{ github.sha }}" >> release-info.md
+
+    - name: Upload Combined Release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./pesto_tilde-combined.zip
+        asset_name: pesto_tilde-combined.zip
+        asset_content_type: application/zip
+
+    - name: Upload Release Info
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./release-info.md
+        asset_name: release-info.md
+        asset_content_type: text/markdown
+
+  # Test the combined package structure
+  test-combined-package:
+    needs: create-combined-release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download combined package
+      uses: actions/download-artifact@v4
+      with:
+        name: pesto_tilde-combined
+        
+    - name: Test package structure
+      shell: bash
+      run: |
+        unzip pesto_tilde-combined.zip
+        
+        echo "Combined package contents:"
+        find pesto_tilde -type f | sort
+        
+        # Verify both externals exist
+        [ -f "pesto_tilde/externals/pesto~.mxo/Contents/MacOS/pesto~" ] && echo "✓ macOS external found" || echo "✗ macOS external missing"
+        [ -f "pesto_tilde/externals/pesto~.mxe64" ] && echo "✓ Windows external found" || echo "✗ Windows external missing"
+        
+        # Check for essential package files
+        [ -f "pesto_tilde/ReadMe.md" ] && echo "✓ ReadMe.md found" || echo "✗ ReadMe.md missing"
+        [ -d "pesto_tilde/help" ] && echo "✓ help directory found" || echo "✗ help directory missing"
+        [ -d "pesto_tilde/externals" ] && echo "✓ externals directory found" || echo "✗ externals directory missing"
+        
+        echo "Package structure test completed"
