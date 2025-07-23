@@ -131,7 +131,7 @@ public:
             // Check models found
             if (m_found_models.empty()) {
                 error("No models found. Make sure .onnx model files are in Max's search path with naming pattern: " + 
-                      std::string(checkpoint.get()) + "_<samplerate>_<chunksize>.onnx");
+                      std::string(checkpoint.get().c_str()) + "_<samplerate>_<chunksize>.onnx");
                 return;
             }
             
@@ -465,7 +465,7 @@ public:
         try {
             m_found_models.clear();
             
-            std::string checkpoint_str = std::string(checkpoint.get());
+            std::string checkpoint_str(checkpoint.get().c_str());
         
         // Iterate through all combinations of sample rates and chunk sizes
         for (int sr : sample_rates.get()) {
