@@ -677,7 +677,6 @@ public:
                 pitch_output = std::make_unique<outlet<>>(this, "(float) model's pitch prediction in MIDI note number");
                 confidence_output = std::make_unique<outlet<>>(this, "(float) model's confidence prediction (0-1)");
                 amplitude_output = std::make_unique<outlet<>>(this, "(float) model's amplitude prediction");
-                cout << "Created model outputs" << endl;
             }
             
             return true;
