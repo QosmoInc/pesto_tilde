@@ -8,25 +8,25 @@ This repository hosts `pesto~`, a Max/MSP external object designed for streaming
 
 ## Getting Started
 
-To use `pesto~` with a pre-built release, first download the latest release from the releases page and unzip it into your Max packages folder. For Max 8, this is typically located at:
+To use `pesto~` with a pre-built release, first download the latest release from the releases page and unzip it into your Max packages folder. For Max 9, this is typically located at:
 
-*   macOS: `~/Documents/Max 8/Packages/`
-*   Windows: `C:\Users\[YourUsername]\Documents\Max 8\Packages\`
+*   macOS: `~/Documents/Max 9/Packages/`
+*   Windows: `C:\Users\[YourUsername]\Documents\Max 9\Packages\`
 
-The release comes pre-bundled with a handful of models, 128, 256, 512, and 1024 samples at 44.1kHz sample rate (the default for Max and Ableton). The preprocessing step within the PESTO model is sensitive to sample rate, and to avoid any extra overhead I chose not to include any sample rate conversion. If you are using a different sample rate, or would just like a different chunk size, you can very easily export more scripted models from the original PESTO repository. See the Exporting Models section below for more details. 
+The release comes pre-bundled with a handful of models, 128, 256, 512, and 1024 samples at 44.1kHz (the default for Max and Ableton) and 48kHz sample rate. The preprocessing step within the PESTO model is sensitive to sample rate, so we have included the common sample rates. If you use a different sample rate to those specified, the external does some internal mathematics to calculate an offset to shift the MIDI pitch to the correct pitch. However If you would like the model to run natively at the different sample rate, or would just like a different chunk size, you can export more traced models from my ONNX export repository. See the Exporting Models section below for more details. 
 
 ## Usage
 
-To use `pesto~`, create a new object in Max with the syntax `pesto~ <chunk_size>`. The chunk size determines how many samples are processed at once - smaller chunks reduce latency while larger chunks improve accuracy. We recommend values between 128 samples (minimum stable size) and 1024 samples (acceptable latency for most applications). You must specify a chunk size argument, though using `0` will automatically select the smallest available chunk size.
+To use `pesto~`, create a new object in Max with the syntax `pesto~ <chunk_size>`. The chunk size determines how many samples are processed at once - smaller chunks reduce latency while larger chunks improve accuracy. We recommend values between 128 samples (minimum stable size) and 1024 samples (acceptable latency for most applications). You must specify a chunk size argument to load an initial model!
 
 `pesto~` has three outlets:
 1.   **Pitch:** Outputs the estimated midi pitch value.
 2.   **Confidence:** Outputs the confidence of the pitch estimation, ranging from 0 to 1.
 3.   **Amplitude:** Outputs an continuous note amplitude.
 
-You can change settings during runtime by sending these messages to the object:
+You can hotswap models during runtime by sending these messages to the object:
 - `chunk <chunk_size>` to adjust the processing chunk size
-- `model <modelname.pt>` to load a specific model file
+- `model <modelname.onnx>` to load a specific model file
 
 `pesto~` will continuously output pitch, even if the confidence and amplitude are both very low, so we also include a couple of useful attributes: `@conf <value>` and `@amp <value>`. These provide automatic confidence and amplitude thresholding, returning a heavily negative midi value from the pitch outlet when the confidence or amplitude is below the specified value.
 
@@ -44,55 +44,42 @@ xattr -r -d com.apple.quarantine externals/pesto~.mxo/Contents/MacOS/*
 
 ### Exporting Models
 
-To use `pesto~` with different sample rates or chunk sizes not included in the pre-built release, you need to export new JIT (TorchScript) models from the original [PESTO repository](https://github.com/SonyCSLParis/pesto). Follow the instructions below or refer to the readme in the original repository for more details.
+To use `pesto~` with different sample rates or chunk sizes not included in the pre-built release, you need to export new ONNX models from the [my fork](https://github.com/TeeJayBaker/pesto/tree/feature/onnx-export) of the original PESTO repository. Follow the instructions below or refer to the readme in the repository for more details.
 
-1.  **Clone the Official PESTO Repository:**
-    Clone the official PESTO repository:
+1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/SonyCSLParis/pesto.git
-    cd pesto
+    git clone https://github.com/TeeJayBaker/pesto.git
+    git checkout feature/onnx-export
     ```
 2.  **Export the Model:**
-    Run the `export_jit.py` script, specifying the checkpoint, your desired sample rate (in Hz) and chunk size (hop size in samples). For example, to export a model for a 44.1kHz sample rate and a chunk size of 512 samples:
+    Run the `export_onnx.py` script, specifying the checkpoint, your desired sample rate (in Hz) and chunk size (hop size in samples). For example, to export a model for a 44.1kHz sample rate and a chunk size of 512 samples:
     ```bash
-    python -m realtime.export_jit 'mir-1k_g7' --sr 44100 --hop 512
+    python -m realtime.export_onnx 'mir-1k_g7' --sr 44100 --hop 512
     ```
-    This will create a `.pt` file in the `pesto/assets/` directory, named according to the convention `<DATE>_sr<SAMPLE_RATE_IN_KHZ>k_h<CHUNK_SIZE>.pt` (e.g., `20250528_sr44k_h512.pt`).
+    This will create a `.onnx` file in the root directory, named according to the convention `<CHECKPOINT>_<SAMPLE_RATE>_<CHUNK_SIZE>.onnx` (e.g., `mir-1k_g7_44100_512.onnx`).
 3.  **Place Models:**
-    Move the exported `.pt` model file(s) into the `models` folder within this `pesto~` package's directory (e.g., `.../Packages/pesto/models/`).
+    Move the exported `.onnx` model file(s) into the `misc` folder within this `pesto~` package's directory (e.g., `.../Packages/pesto/misc/`).
 4.  **Load the Model in Max:**
-    In Max, you can load the new model by sending the message `model <modelname.pt>` to the `pesto~` object.
-
-**Note!** in the `load_model()` function in `export_jit.py`, you may need to add the argument `mirror=1.0`, This centres the incoming chunks in the CQT window to ensure minimal latency!
+    In Max, you can load the new model by sending the message `model <modelname.onnx>` to the `pesto~` object.
 
 ---
 
 ## Building from Source
 
-Building `pesto~` from source involves cloning the repository, downloading dependencies (LibTorch and CMake), and then running the specific CMake commands to your OS.
+Building `pesto~` from source involves cloning the repository, downloading dependencies (CMake), and then running the specific CMake commands to your OS.
 
 ### 1. Clone the Repository
-If you haven't already, clone this repository to your local machine. It's recommended to clone it directly into your Max Packages folder. For Max 8, the typical locations are:
-*   macOS: `~/Documents/Max 8/Packages/`
-*   Windows: `C:\Users\[YourUsername]\Documents\Max 8\Packages\`
+If you haven't already, clone this repository to your local machine. It's recommended to clone it directly into your Max Packages folder. For Max 9, the typical locations are:
+*   macOS: `~/Documents/Max 9/Packages/`
+*   Windows: `C:\Users\[YourUsername]\Documents\Max 9\Packages\`
 
-Open your terminal or command prompt, navigate to your chosen directory (e.g., inside `Max 8/Packages/`), and run the following command to clone the repository and its submodules:
+Open your terminal or command prompt, navigate to your chosen directory (e.g., inside `Max 9/Packages/`), and run the following command to clone the repository and its submodules:
 
 ```bash
 git clone https://github.com/QosmoInc/pesto_tilde.git --recursive
 ```
 
-### 2. Download LibTorch
-
-Download the appropriate LibTorch distribution for your architecture from the [PyTorch website](https://pytorch.org/get-started/locally/).
-
-*   **Apple Silicon Macs:** Download the latest "macOS - Arm64" version.
-*   **Windows:** Download the "Win - shared" version.
-
-
-Extract the downloaded LibTorch archive and place the `libtorch` folder into the root directory of this project (e.g., `...\Packages\pesto\libtorch`).
-
-### 3. CMake Build Steps
+### 2. CMake Build Steps
 
 Open a terminal or command prompt in the packages's root directory.
 
@@ -118,13 +105,13 @@ cmake --build . --config Release
 ```
 (Adjust the Visual Studio version in the generator flag `-G` if you have a different version installed.)
 
-This will generate the `pesto~.mxo` (macOS) or `pesto~.mxe64` (Windows) file in the externals folder and move the appropriate `.dll` or `.dylib` files. If you cloned the repository into your Max 8 packages folder, the external should be immediately available in Max. Otherwise, copy the `externals`, `models`, `docs` and `help` (and `libs` on Windows) folders to a new folder in your Max 8 packages folder.
+This will generate the `pesto~.mxo` (macOS) or `pesto~.mxe64` (Windows) file in the externals folder. If you cloned the repository into your Max 9 packages folder, the external should be immediately available in Max. Otherwise, copy the `externals`, `misc`, `docs` and `help` folders to a new folder in your Max 9 packages folder.
 
 ---
 
 ## Contributions
 
-Contributions, bug reports, and optimisations are welcome! Especially builds for Intel Mac or Linux! Please feel free to open an issue or submit a pull request.
+Contributions, bug reports, and optimisations are welcome! Especially builds for Linux! Please feel free to open an issue or submit a pull request.
 
 ## Credits
 

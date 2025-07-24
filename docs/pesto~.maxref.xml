@@ -46,6 +46,11 @@
 			<description>Set the DSP state to either on (1) or off (0). </description>
 		</method>
 
+		<method name='refresh'>
+			<digest>Refresh the models list based on current attribute settings</digest>
+			<description>Refresh the models list based on current attribute settings. </description>
+		</method>
+
 		<method name='bang'>
 			<digest>Reset the object by clearing buffers</digest>
 			<description>Reset the object by clearing buffers. Reset the object by clearing both the Max external's and the PESTO model's internal circular buffer. </description>
@@ -73,9 +78,24 @@
 			<description>Amplitude threshold (0+). If not set the model will continuously output pitch, when set, pitch output will be -1500 if amplitude is below threshold </description>
 		</attribute>
 
+		<attribute name='checkpoint' get='1' set='1' type='symbol' size='1' >
+			<digest>Model checkpoint name (prefix for model files)</digest>
+			<description>Model checkpoint name (prefix for model files). The attribute can also be used to specify which models are included when freezing the external. </description>
+		</attribute>
+
+		<attribute name='chunk_sizes' get='1' set='1' type='float64' size='1' >
+			<digest>List of model chunk sizes to search for</digest>
+			<description>List of model chunk sizes to search for. The attribute can also be used to specify which models are included when freezing the external. </description>
+		</attribute>
+
 		<attribute name='conf' get='1' set='1' type='float64' size='1' >
 			<digest>Confidence threshold (0-1)</digest>
 			<description>Confidence threshold (0-1). If not set the model will continuously output pitch, when set, pitch output will be -1500 if confidence is below threshold </description>
+		</attribute>
+
+		<attribute name='sample_rates' get='1' set='1' type='float64' size='1' >
+			<digest>List of model sample rates to search for</digest>
+			<description>List of model sample rates to search for. The attribute can also be used to specify which models are included when freezing the external. </description>
 		</attribute>
 
 	</attributelist>

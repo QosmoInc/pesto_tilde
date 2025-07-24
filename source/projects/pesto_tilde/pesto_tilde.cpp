@@ -102,15 +102,15 @@ public:
 
     // Model search attributes
     attribute<symbol> checkpoint { this, "checkpoint", symbol("mir-1k_g7"),
-        description {"Model checkpoint name (prefix for model files)"}
+        description {"Model checkpoint name (prefix for model files). The attribute can also be used to specify which models are included when freezing the external."}
     };
 
     attribute<std::vector<int>> sample_rates { this, "sample_rates", {44100, 48000},
-        description {"List of sample rates to search for in models"}
+        description {"List of model sample rates to search for. The attribute can also be used to specify which models are included when freezing the external."}
     };
 
     attribute<std::vector<int>> chunk_sizes { this, "chunk_sizes", {128, 256, 512, 1024},
-        description {"List of chunk sizes to search for in models"}
+        description {"List of model chunk sizes to search for. The attribute can also be used to specify which models are included when freezing the external."}
     };
 
     // Initial chunk size argument that determines target model size at initialization
