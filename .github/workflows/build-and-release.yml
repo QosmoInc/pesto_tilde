@@ -90,13 +90,13 @@ jobs:
         mkdir -p package/pesto_tilde/externals
         
         # Copy macOS external (preserve .mxo bundle structure)
-        if [ -d "artifacts/external-macOS-Universal/externals/pesto~.mxo" ]; then
-          cp -r artifacts/external-macOS-Universal/externals/pesto~.mxo package/pesto_tilde/externals/
+        if [ -d "artifacts/external-macOS-Universal/pesto~.mxo" ]; then
+          cp -r artifacts/external-macOS-Universal/pesto~.mxo package/pesto_tilde/externals/
         fi
         
         # Copy Windows external
-        if [ -f "artifacts/external-Windows-x64/externals/pesto~.mxe64" ]; then
-          cp artifacts/external-Windows-x64/externals/pesto~.mxe64 package/pesto_tilde/externals/
+        if [ -f "artifacts/external-Windows-x64/pesto~.mxe64" ]; then
+          cp artifacts/external-Windows-x64/pesto~.mxe64 package/pesto_tilde/externals/
         fi
         
         # Copy all shared Max package files
@@ -128,41 +128,6 @@ jobs:
         path: pesto_tilde-combined.zip
         retention-days: 30
 
-    - name: Create release info
-      run: |
-        # Extract version from tag or use 'dev-build' for non-tag builds
-        if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/}
-        else
-          VERSION="dev-build"
-        fi
-        echo "# pesto~ Release $VERSION" > release-info.md
-        echo "" >> release-info.md
-        echo "This combined release includes:" >> release-info.md
-        echo "- **macOS Universal (.mxo)**: Compatible with both Intel and Apple Silicon Macs" >> release-info.md
-        echo "- **Windows x64 (.mxe64)**: Compatible with 64-bit Windows systems" >> release-info.md
-        echo "" >> release-info.md
-        echo "## Installation" >> release-info.md
-        echo "1. Download the combined package below" >> release-info.md
-        echo "2. Extract to your Max Packages folder:" >> release-info.md
-        echo "   - **macOS**: ~/Documents/Max 8/Packages/" >> release-info.md
-        echo "   - **Windows**: C:\\\\Users\\\\[Username]\\\\Documents\\\\Max 8\\\\Packages\\\\" >> release-info.md
-        echo "3. Restart Max/MSP" >> release-info.md
-        echo "" >> release-info.md
-        echo "Built from commit: ${{ github.sha }}" >> release-info.md
-
-    - name: Create GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          pesto_tilde-combined.zip
-          release-info.md
-        body_path: release-info.md
-        draft: false
-        prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Test the combined package structure
   test-combined-package:
@@ -184,12 +149,70 @@ jobs:
         find pesto_tilde -type f | sort
         
         # Verify both externals exist
-        [ -d "pesto_tilde/externals/pesto~.mxo" ] && [ -f "pesto_tilde/externals/pesto~.mxo/Contents/MacOS/pesto~" ] && echo "✓ macOS external (.mxo bundle) found" || echo "✗ macOS external missing or malformed"
-        [ -f "pesto_tilde/externals/pesto~.mxe64" ] && echo "✓ Windows external found" || echo "✗ Windows external missing"
+        if [ -d "pesto_tilde/externals/pesto~.mxo" ] && [ -f "pesto_tilde/externals/pesto~.mxo/Contents/MacOS/pesto~" ]; then
+          echo "✓ macOS external (.mxo bundle) found"
+        else
+          echo "✗ macOS external missing or malformed"
+          exit 1
+        fi
+        
+        if [ -f "pesto_tilde/externals/pesto~.mxe64" ]; then
+          echo "✓ Windows external found"
+        else
+          echo "✗ Windows external missing"
+          exit 1
+        fi
         
         # Check for essential package files
-        [ -f "pesto_tilde/ReadMe.md" ] && echo "✓ ReadMe.md found" || echo "✗ ReadMe.md missing"
-        [ -d "pesto_tilde/help" ] && echo "✓ help directory found" || echo "✗ help directory missing"
+        [ -f "pesto_tilde/ReadMe.md" ] && echo "✓ ReadMe.md found" || echo "⚠ ReadMe.md missing"
+        [ -d "pesto_tilde/help" ] && echo "✓ help directory found" || echo "⚠ help directory missing"
         [ -d "pesto_tilde/externals" ] && echo "✓ externals directory found" || echo "✗ externals directory missing"
         
-        echo "Package structure test completed"
+        echo "✅ Package structure test completed successfully"
+
+  # Create GitHub Release only after tests pass
+  create-github-release:
+    needs: test-combined-package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Download combined package
+      uses: actions/download-artifact@v4
+      with:
+        name: pesto_tilde-combined
+
+    - name: Create release info
+      run: |
+        # Extract version from tag
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "# pesto~ Release $VERSION" > release-info.md
+        echo "" >> release-info.md
+        echo "This combined release includes:" >> release-info.md
+        echo "- **macOS Universal (.mxo)**: Compatible with both Intel and Apple Silicon Macs" >> release-info.md
+        echo "- **Windows x64 (.mxe64)**: Compatible with 64-bit Windows systems" >> release-info.md
+        echo "" >> release-info.md
+        echo "## Installation" >> release-info.md
+        echo "1. Download the combined package below" >> release-info.md
+        echo "2. Extract to your Max Packages folder:" >> release-info.md
+        echo "   - **macOS**: ~/Documents/Max 8/Packages/" >> release-info.md
+        echo "   - **Windows**: C:\\\\Users\\\\[Username]\\\\Documents\\\\Max 8\\\\Packages\\\\" >> release-info.md
+        echo "3. Restart Max/MSP" >> release-info.md
+        echo "" >> release-info.md
+        echo "Built from commit: ${{ github.sha }}" >> release-info.md
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          pesto_tilde-combined.zip
+        body_path: release-info.md
+        draft: false
+        prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
