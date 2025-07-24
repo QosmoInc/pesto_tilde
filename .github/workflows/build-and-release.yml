@@ -191,26 +191,27 @@ jobs:
       run: |
         # Extract version from tag
         VERSION=${GITHUB_REF#refs/tags/}
-        echo "# pesto~ Release $VERSION" > release-info.md
+        echo "# pesto~ for Max - Release $VERSION" > release-info.md
         echo "" >> release-info.md
-        echo "This combined release includes:" >> release-info.md
+        echo "## Changelog" >> release-info.md
+        echo "## Included" >> release-info.md
         echo "- **macOS Universal (.mxo)**: Compatible with both Intel and Apple Silicon Macs" >> release-info.md
         echo "- **Windows x64 (.mxe64)**: Compatible with 64-bit Windows systems" >> release-info.md
         echo "" >> release-info.md
         echo "## Installation" >> release-info.md
         echo "1. Download the combined package below" >> release-info.md
         echo "2. Extract to your Max Packages folder:" >> release-info.md
-        echo "   - **macOS**: ~/Documents/Max 8/Packages/" >> release-info.md
-        echo "   - **Windows**: C:\\\\Users\\\\[Username]\\\\Documents\\\\Max 8\\\\Packages\\\\" >> release-info.md
+        echo "   - **macOS**: ~/Documents/Max 9/Packages/" >> release-info.md
+        echo "   - **Windows**: C:\\\\Users\\\\[Username]\\\\Documents\\\\Max 9\\\\Packages\\\\" >> release-info.md
         echo "3. Restart Max/MSP" >> release-info.md
         echo "" >> release-info.md
-        echo "Built from commit: ${{ github.sha }}" >> release-info.md
+        echo "## Feedback & Issues" >> release-info.md
+        echo "*Tested extensively on Apple Silicon Mac, please report any issues or share feedback through the GitHub repository's issue tracker." >> release-info.md
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          pesto_tilde-combined.zip
+        files: pesto_tilde-combined.zip
         body_path: release-info.md
         draft: false
         prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}

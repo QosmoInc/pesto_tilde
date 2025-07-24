@@ -111,7 +111,7 @@ This will generate the `pesto~.mxo` (macOS) or `pesto~.mxe64` (Windows) file in 
 
 ## Contributions
 
-Contributions, bug reports, and optimisations are welcome! Especially builds for Linux! Please feel free to open an issue or submit a pull request.
+Contributions, bug reports, and optimisations are welcome! Especially builds for Pure Data! Please feel free to open an issue or submit a pull request.
 
 ## Credits
 
